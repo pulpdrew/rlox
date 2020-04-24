@@ -1,13 +1,14 @@
-use crate::opcode::OpCode;
 use crate::value::Value;
+use crate::vm::OpCode;
 use num_traits::FromPrimitive;
 use num_traits::ToPrimitive;
 use std::ops::Index;
 
+#[derive(Debug)]
 pub struct Chunk {
     code: Vec<u8>,
     constants: Vec<Value>,
-    pub lines: Vec<i32>,
+    pub lines: Vec<usize>,
     pub name: String,
 }
 
@@ -21,12 +22,12 @@ impl Chunk {
         }
     }
 
-    pub fn push_opcode(&mut self, code: OpCode, line: i32) {
+    pub fn push_opcode(&mut self, code: OpCode, line: usize) {
         self.code.push(to_byte(code));
         self.lines.push(line);
     }
 
-    pub fn push_constant(&mut self, value: Value, line: i32) -> u16 {
+    pub fn push_constant(&mut self, value: Value, line: usize) -> u16 {
         self.constants.push(value);
         self.lines.push(line);
 
@@ -48,12 +49,10 @@ impl Chunk {
         index as u16
     }
 
-    #[allow(dead_code)]
     pub fn get_constant(&self, index: u16) -> &Value {
         &self.constants[index as usize]
     }
 
-    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.code.len()
     }
@@ -86,6 +85,7 @@ impl Chunk {
             Some(OpCode::Multiply) => self.simple_instruction("Multiply", offset),
             Some(OpCode::Divide) => self.simple_instruction("Divide", offset),
             Some(OpCode::Negate) => self.simple_instruction("Negate", offset),
+            Some(OpCode::Pop) => self.simple_instruction("Pop", offset),
             None => {
                 println!("Unknown opcode {}", self[offset]);
                 offset + 1

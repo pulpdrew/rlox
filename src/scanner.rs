@@ -2,6 +2,7 @@ use crate::token::Kind;
 use crate::token::Token;
 use std::collections::VecDeque;
 
+#[derive(Debug)]
 pub struct Scanner {
     characters: VecDeque<char>,
     line: usize,

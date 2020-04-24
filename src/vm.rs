@@ -1,19 +1,33 @@
 use crate::chunk::Chunk;
-use crate::opcode::OpCode;
 use crate::value::Value;
 
 use num_traits::FromPrimitive;
 use std::collections::VecDeque;
 
+#[derive(Debug, FromPrimitive, ToPrimitive)]
+pub enum OpCode {
+    Constant,
+    LongConstant,
+    Return,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
+    Pop,
+}
+
+#[derive(Debug)]
 pub struct VM {
     ip: usize,
     chunk: Chunk,
     stack: VecDeque<Value>,
 }
 
+#[derive(Debug)]
 pub struct RuntimeError {
     pub message: String,
-    pub line: i32,
+    pub line: usize,
 }
 
 impl VM {
@@ -94,7 +108,21 @@ impl VM {
                         });
                     }
                 }
-                Some(OpCode::Negate) => {}
+                Some(OpCode::Negate) => {
+                    if self.peek(0).is_number() {
+                        let value = -self.peek(0).clone();
+                        self.pop();
+                        self.push(value);
+                    } else {
+                        return Err(RuntimeError {
+                            message: String::from("Cannot negate non-numeric types"),
+                            line: self.chunk.lines[self.ip - 1],
+                        });
+                    }
+                }
+                Some(OpCode::Pop) => {
+                    self.pop();
+                }
                 Some(OpCode::Return) => return Ok(()),
                 None => {
                     return Err(RuntimeError {
@@ -126,7 +154,11 @@ impl VM {
     }
 
     fn pop(&mut self) -> Value {
-        self.stack.pop_back().expect("Popped an emtpy stack")
+        self.stack.pop_back().expect("Popped an empty stack")
+    }
+
+    fn peek(&mut self, distance: usize) -> &Value {
+        &self.stack[self.stack.len() - distance - 1]
     }
 
     fn print_stack(&self) {

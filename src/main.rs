@@ -1,6 +1,8 @@
+mod ast;
 mod chunk;
+mod compiler;
 mod object;
-mod opcode;
+mod parser;
 mod scanner;
 mod token;
 mod value;
@@ -9,36 +11,32 @@ mod vm;
 #[macro_use]
 extern crate num_derive;
 
-use opcode::OpCode;
+use compiler::Compiler;
+use parser::Parser;
 use std::env;
 use std::fs;
-use token::Kind;
-use value::Value;
 use vm::VM;
 
 fn run_file(filename: &String) {
     let source = fs::read_to_string(&filename)
         .expect(format!("Failed to read source file {}", filename).as_str());
-    let mut scanner = scanner::Scanner::new(source.clone());
-    loop {
-        let next = scanner.next();
-        if next.kind == Kind::Eof {
-            break;
-        } else {
-            println!("{:?}", next)
-        }
+
+    // Parse
+    let mut parser = Parser::new(source.clone());
+    let ast = parser.parse_program();
+    if parser.had_error {
+        return;
     }
 
-    let mut chunk = chunk::Chunk::new(String::from("script"));
-    chunk.push_constant(Value::Number(10.0), 1);
-    chunk.push_constant(Value::Number(12.0), 1);
-    chunk.push_opcode(OpCode::Add, 1);
-    chunk.push_opcode(OpCode::Return, 3);
-    chunk.dump();
+    // Compile
+    let mut compiler = Compiler::new();
+    let binary = compiler.compile(ast);
+    binary.dump();
 
+    // Execute
     println!("Interpreting: ");
     let mut vm = VM::new();
-    match vm.interpret(chunk) {
+    match vm.interpret(binary) {
         Ok(()) => return,
         Err(e) => eprintln!("{}", e.message),
     }
