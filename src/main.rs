@@ -1,7 +1,7 @@
 mod ast;
-mod chunk;
 mod compiler;
 mod error;
+mod executable;
 mod object;
 mod parser;
 mod scanner;

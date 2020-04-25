@@ -4,17 +4,27 @@ use num_traits::FromPrimitive;
 use num_traits::ToPrimitive;
 use std::ops::Index;
 
+/// An Executable contains the output of compilation to be run on a VM.
 #[derive(Debug)]
-pub struct Chunk {
+pub struct Executable {
+    /// The OpCodes and arguments to be executed
     code: Vec<u8>,
+
+    /// The static Values referenced by the executable code
     constants: Vec<Value>,
-    pub lines: Vec<usize>,
+
+    /// The source line numbers associated with each OpCode.
+    /// `lines[i]` is the source line number of `code[i]`.
+    pub lines: Vec<usize>, // TODO change to index in source
+
+    /// The name of the executable unit. Could be a function name or <script>
     pub name: String,
 }
 
-impl Chunk {
+impl Executable {
+    /// Create a new, empty Executable with the given name
     pub fn new(name: String) -> Self {
-        Chunk {
+        Executable {
             code: vec![],
             lines: vec![],
             constants: vec![],
@@ -22,11 +32,16 @@ impl Chunk {
         }
     }
 
+    /// Append an OpCode to the Executable
     pub fn push_opcode(&mut self, code: OpCode, line: usize) {
         self.code.push(to_byte(code));
         self.lines.push(line);
     }
 
+    /// Add a constant to the list of constants and an instruction to
+    /// access that constant.
+    ///
+    /// The executable may have no more that `u16::max_value` constants.
     pub fn push_constant(&mut self, value: Value, line: usize) -> u16 {
         self.constants.push(value);
         self.lines.push(line);
@@ -49,14 +64,17 @@ impl Chunk {
         index as u16
     }
 
+    /// Retrieve a constant by index from the Executable's constants table.
     pub fn get_constant(&self, index: u16) -> &Value {
         &self.constants[index as usize]
     }
 
+    /// The number of bytes (OpCodes + arguments) in the Executable
     pub fn len(&self) -> usize {
         self.code.len()
     }
 
+    /// Disassemble this Executable and print the result
     pub fn dump(&self) {
         println!();
         println!("(Dumping: {})", self.name);
@@ -69,6 +87,8 @@ impl Chunk {
         println!();
     }
 
+    /// Disassemble the Instruction beginning at the given offset
+    /// and print the result
     pub fn disassemble_instruction(&self, offset: usize) -> usize {
         print!("{:0>5}  ", offset);
         if offset == 0 || self.lines[offset] != self.lines[offset - 1] {
@@ -85,6 +105,14 @@ impl Chunk {
             Some(OpCode::Multiply) => self.simple_instruction("Multiply", offset),
             Some(OpCode::Divide) => self.simple_instruction("Divide", offset),
             Some(OpCode::Negate) => self.simple_instruction("Negate", offset),
+            Some(OpCode::Less) => self.simple_instruction("Less", offset),
+            Some(OpCode::LessEqual) => self.simple_instruction("LessEqual", offset),
+            Some(OpCode::Greater) => self.simple_instruction("Greater", offset),
+            Some(OpCode::GreaterEqual) => self.simple_instruction("GreaterEqual", offset),
+            Some(OpCode::Equal) => self.simple_instruction("Equal", offset),
+            Some(OpCode::Not) => self.simple_instruction("Not", offset),
+            Some(OpCode::True) => self.simple_instruction("True", offset),
+            Some(OpCode::False) => self.simple_instruction("False", offset),
             Some(OpCode::Pop) => self.simple_instruction("Pop", offset),
             None => {
                 println!("Unknown opcode {}", self[offset]);
@@ -111,7 +139,7 @@ impl Chunk {
     }
 }
 
-impl Index<usize> for Chunk {
+impl Index<usize> for Executable {
     type Output = u8;
     fn index(&self, index: usize) -> &Self::Output {
         &self.code[index]

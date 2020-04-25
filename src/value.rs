@@ -1,4 +1,5 @@
 use crate::object::Obj;
+use std::cmp::Ordering;
 use std::ops;
 use std::rc::Rc;
 
@@ -42,6 +43,15 @@ impl Value {
             true
         } else {
             false
+        }
+    }
+
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Value::Bool(b) => *b,
+            Value::Nil => false,
+            Value::Number(n) => (n != &0f64),
+            Value::Obj(_) => true,
         }
     }
 }
@@ -118,6 +128,40 @@ impl ops::Neg for Value {
             Value::Number(-left)
         } else {
             panic!("Attempted to negate {:?}", self);
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Value) -> bool {
+        match self {
+            Value::Bool(b) => other.is_truthy() == *b,
+            Value::Number(n) => match other {
+                Value::Number(o) => n == o,
+                _ => false,
+            },
+            Value::Nil => other.is_nil(),
+            Value::Obj(_) => other.is_obj(),
+        }
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Value) -> Option<Ordering> {
+        if self == other {
+            Some(Ordering::Equal)
+        } else if let Value::Number(n1) = self {
+            if let Value::Number(n2) = other {
+                if n1 < n2 {
+                    Some(Ordering::Less)
+                } else {
+                    Some(Ordering::Greater)
+                }
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
 }

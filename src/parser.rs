@@ -55,7 +55,45 @@ impl Parser {
     }
 
     fn expression(&mut self) -> Expression {
-        self.addition()
+        self.equality()
+    }
+
+    fn equality(&mut self) -> Expression {
+        let mut expr = self.comparison();
+        loop {
+            match self.current.kind {
+                Kind::EqualEqual | Kind::BangEqual => {
+                    let operator = self.advance();
+                    let right = self.comparison();
+                    expr = Expression::Binary {
+                        left: Box::new(expr),
+                        operator,
+                        right: Box::new(right),
+                    }
+                }
+                _ => break,
+            }
+        }
+        expr
+    }
+
+    fn comparison(&mut self) -> Expression {
+        let mut expr = self.addition();
+        loop {
+            match self.current.kind {
+                Kind::Less | Kind::LessEqual | Kind::Greater | Kind::GreaterEqual => {
+                    let operator = self.advance();
+                    let right = self.addition();
+                    expr = Expression::Binary {
+                        left: Box::new(expr),
+                        operator,
+                        right: Box::new(right),
+                    }
+                }
+                _ => break,
+            }
+        }
+        expr
     }
 
     fn addition(&mut self) -> Expression {
@@ -91,19 +129,44 @@ impl Parser {
     }
 
     fn unary(&mut self) -> Expression {
-        if self.current.kind == Kind::Minus {
-            let operator = self.advance();
-            let expression = self.expression();
-            Expression::Unary {
-                operator: operator,
-                expression: Box::new(expression),
+        match self.current.kind {
+            Kind::Minus | Kind::Bang => {
+                let operator = self.advance();
+                let expression = self.unary();
+                Expression::Unary {
+                    operator: operator,
+                    expression: Box::new(expression),
+                }
             }
-        } else if self.current.kind == Kind::NumberLiteral {
-            self.number()
-        } else {
-            self.error_at_current("Expected unary expression");
-            self.advance();
-            Expression::None
+            _ => self.call(),
+        }
+    }
+
+    fn call(&mut self) -> Expression {
+        self.primary()
+    }
+
+    fn primary(&mut self) -> Expression {
+        match self.current.kind {
+            Kind::LeftParen => {
+                self.advance();
+                let expression = self.expression();
+                match self.eat(Kind::RightParen, "Expected ')' after expression.") {
+                    Ok(_) => expression,
+                    Err(()) => Expression::None,
+                }
+            }
+            Kind::True => Expression::True {
+                literal: self.advance(),
+            },
+            Kind::False => Expression::False {
+                literal: self.advance(),
+            },
+            Kind::NumberLiteral => self.number(),
+            _ => {
+                self.error_at_current("Expected primary expression.");
+                Expression::None
+            }
         }
     }
 
