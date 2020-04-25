@@ -10,9 +10,12 @@ impl Compiler {
     pub fn new() -> Self {
         Compiler {}
     }
-    pub fn compile(&mut self, program: Statement) -> Chunk {
+    pub fn compile(&mut self, program: Vec<Statement>) -> Chunk {
         let mut chunk = Chunk::new(String::from("script"));
-        self.compile_statement(&mut chunk, program);
+        for statement in program {
+            self.compile_statement(&mut chunk, statement);
+        }
+
         chunk.push_opcode(OpCode::Return, *chunk.lines.last().unwrap_or(&0));
         chunk
     }

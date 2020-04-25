@@ -1,4 +1,5 @@
 use crate::ast::{Expression, Statement};
+use crate::error::ErrorHandler;
 use crate::scanner::Scanner;
 use crate::token::{Kind, Token};
 use crate::value::Value;
@@ -10,11 +11,12 @@ pub struct Parser {
     next: Token,
     pub had_error: bool,
     pub panic_mode: bool,
+    handler: ErrorHandler,
 }
 
 #[allow(dead_code)]
 impl Parser {
-    pub fn new(source: String) -> Self {
+    pub fn new(source: String, handler: ErrorHandler) -> Self {
         let mut scanner = Scanner::new(source);
         let current = scanner.next();
         let next = scanner.next();
@@ -24,15 +26,14 @@ impl Parser {
             next,
             had_error: false,
             panic_mode: false,
+            handler,
         }
     }
 
-    pub fn parse_program(&mut self) -> Statement {
-        let program = self.statement();
-
-        match self.eat(Kind::Eof, "Expected end of file.") {
-            Ok(_) => {}
-            Err(_) => self.synchronize(),
+    pub fn parse_program(&mut self) -> Vec<Statement> {
+        let mut program = vec![];
+        while self.current.kind != Kind::Eof {
+            program.push(self.statement());
         }
 
         program
@@ -46,7 +47,10 @@ impl Parser {
                 expression: Box::new(expression),
                 semi,
             },
-            Err(_) => Statement::None,
+            Err(_) => {
+                self.synchronize();
+                Statement::None
+            }
         }
     }
 
@@ -94,8 +98,12 @@ impl Parser {
                 operator: operator,
                 expression: Box::new(expression),
             }
-        } else {
+        } else if self.current.kind == Kind::NumberLiteral {
             self.number()
+        } else {
+            self.error_at_current("Expected unary expression");
+            self.advance();
+            Expression::None
         }
     }
 
@@ -117,7 +125,7 @@ impl Parser {
         loop {
             self.next = self.scanner.next();
             if let Kind::Error = self.next.kind {
-                self.error_at_current(format!("Unknown character {}", self.next.string).as_str());
+                self.error_at_next(format!("Unknown character {}", self.next.string).as_str());
             } else {
                 break;
             }
@@ -133,24 +141,24 @@ impl Parser {
         }
     }
 
+    fn error_at_next(&mut self, message: &str) {
+        let index_in_source = self.next.index_in_source;
+        self.error_at(index_in_source, message);
+    }
+
     fn error_at_current(&mut self, message: &str) {
-        let line = self.next.line;
-        self.error_at(line, message);
+        let index_in_source = self.current.index_in_source;
+        self.error_at(index_in_source, message);
     }
 
-    fn error(&mut self, message: &str) {
-        let line = self.current.line;
-        self.error_at(line, message);
-    }
-
-    fn error_at(&mut self, line: usize, message: &str) {
+    fn error_at(&mut self, index_in_source: usize, message: &str) {
         if self.panic_mode {
             return;
         }
         self.panic_mode = true;
         self.had_error = true;
 
-        eprintln!("[line {}] Error: {}", line, message);
+        self.handler.error(index_in_source, message);
     }
 
     fn synchronize(&mut self) {
@@ -165,5 +173,6 @@ impl Parser {
                 }
             }
         }
+        self.panic_mode = false;
     }
 }

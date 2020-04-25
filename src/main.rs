@@ -1,6 +1,7 @@
 mod ast;
 mod chunk;
 mod compiler;
+mod error;
 mod object;
 mod parser;
 mod scanner;
@@ -21,8 +22,10 @@ fn run_file(filename: &String) {
     let source = fs::read_to_string(&filename)
         .expect(format!("Failed to read source file {}", filename).as_str());
 
+    let handler = error::ErrorHandler::new(source.clone());
+
     // Parse
-    let mut parser = Parser::new(source.clone());
+    let mut parser = Parser::new(source, handler);
     let ast = parser.parse_program();
     if parser.had_error {
         return;
