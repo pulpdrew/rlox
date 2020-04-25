@@ -16,12 +16,10 @@ use compiler::Compiler;
 use parser::Parser;
 use std::env;
 use std::fs;
+use std::io::{self, Write};
 use vm::VM;
 
-fn run_file(filename: &String) {
-    let source = fs::read_to_string(&filename)
-        .expect(format!("Failed to read source file {}", filename).as_str());
-
+fn run(source: String) {
     let handler = error::ErrorHandler::new(source.clone());
 
     // Parse
@@ -45,10 +43,41 @@ fn run_file(filename: &String) {
     }
 }
 
+fn run_file(filename: &String) {
+    let source = fs::read_to_string(&filename)
+        .expect(format!("Failed to read source file {}", filename).as_str());
+    run(source);
+}
+
+fn repl() {
+    let stdin = io::stdin();
+    loop {
+        print!("> ");
+        io::stdout().flush().expect("Failed to flush to output.");
+
+        let mut source = String::new();
+        loop {
+            match stdin.read_line(&mut source) {
+                Ok(count) => {
+                    if count <= 1 {
+                        run(String::from(source.trim_end()));
+                        break;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{}", e);
+                }
+            }
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() == 2 {
         run_file(&args[1]);
+    } else if args.len() == 1 {
+        repl();
     } else {
         eprintln!("Usage: clox [path]");
     }

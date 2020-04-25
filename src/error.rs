@@ -9,6 +9,12 @@ impl ErrorHandler {
     }
 
     pub fn error(&self, index_in_source: usize, message: &str) {
+        let index_in_source = if index_in_source == self.source.len() {
+            index_in_source - 1
+        } else {
+            index_in_source
+        };
+
         let (line_no, line_start_index, line) = self.get_line(index_in_source);
         eprintln!("Error [line {}]: {}", line_no, message);
         eprintln!("{}", line);
