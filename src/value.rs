@@ -1,7 +1,7 @@
 use crate::object::Obj;
 use std::cmp::Ordering;
+use std::fmt;
 use std::ops;
-use std::rc::Rc;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -9,7 +9,7 @@ pub enum Value {
     Number(f64),
     Bool(bool),
     Nil,
-    Obj(Rc<Obj>),
+    Obj(Obj),
 }
 
 #[allow(dead_code)]
@@ -162,6 +162,17 @@ impl PartialOrd for Value {
             }
         } else {
             None
+        }
+    }
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Nil => write!(f, "nil"),
+            Value::Bool(b) => write!(f, "{}", b),
+            Value::Number(n) => write!(f, "{}", n),
+            Value::Obj(o) => write!(f, "{}", o),
         }
     }
 }

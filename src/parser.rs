@@ -1,8 +1,10 @@
 use crate::ast::{Expression, Statement};
 use crate::error::ErrorHandler;
+use crate::object::Obj;
 use crate::scanner::Scanner;
 use crate::token::{Kind, Token};
 use crate::value::Value;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Parser {
@@ -42,16 +44,19 @@ impl Parser {
     fn statement(&mut self) -> Statement {
         let statement = match self.current.kind {
             Kind::Print => self.print_statement(),
-            _ => match self.eat(Kind::Semicolon, "Expected ';' after expression") {
-                Ok(semi) => Statement::Expression {
-                    expression: Box::new(self.expression()),
-                    semi,
-                },
-                Err(_) => {
-                    self.synchronize();
-                    Statement::None
+            _ => {
+                let expression = self.expression();
+                match self.eat(Kind::Semicolon, "Expected ';' after expression") {
+                    Ok(semi) => Statement::Expression {
+                        expression: Box::new(expression),
+                        semi,
+                    },
+                    Err(_) => {
+                        self.synchronize();
+                        Statement::None
+                    }
                 }
-            },
+            }
         };
 
         statement
@@ -182,6 +187,11 @@ impl Parser {
                 literal: self.advance(),
             },
             Kind::NumberLiteral => self.number(),
+            Kind::StringLiteral => self.string(),
+            Kind::Nil => Expression::Constant {
+                value: Value::Nil,
+                literal: self.advance(),
+            },
             _ => {
                 self.error_at_current("Expected primary expression.");
                 Expression::None
@@ -199,6 +209,14 @@ impl Parser {
                 .expect(format!("Failed to parse '{}' as f64", literal.string).as_str()),
         );
         Expression::Constant { value, literal }
+    }
+
+    fn string(&mut self) -> Expression {
+        let literal = self.advance();
+        let value = Value::Obj(Obj::String(Rc::new(String::from(
+            &literal.string[1..literal.string.len() - 1],
+        ))));
+        Expression::Constant { literal, value }
     }
 
     fn advance(&mut self) -> Token {

@@ -107,7 +107,7 @@ impl VM {
                     Ok(()) => {}
                     Err(e) => return Err(e),
                 },
-                Some(OpCode::Print) => println!("{:?}", self.pop()),
+                Some(OpCode::Print) => println!("{:}", self.pop()),
                 None => {
                     return Err(RuntimeError {
                         message: String::from(format!(
