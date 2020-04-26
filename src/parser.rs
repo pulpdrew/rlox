@@ -35,10 +35,49 @@ impl Parser {
     pub fn parse_program(&mut self) -> Vec<Statement> {
         let mut program = vec![];
         while self.current.kind != Kind::Eof {
-            program.push(self.statement());
+            program.push(self.declaration());
         }
 
         program
+    }
+
+    fn declaration(&mut self) -> Statement {
+        match self.current.kind {
+            Kind::Var => self.var_declaration(),
+            _ => self.statement(),
+        }
+    }
+
+    fn var_declaration(&mut self) -> Statement {
+        self.advance();
+        let name = match self.eat(Kind::IdentifierLiteral, "Expected identifier after 'var'.") {
+            Ok(t) => t,
+            Err(()) => return Statement::None,
+        };
+
+        let statement = if self.current.kind == Kind::Equal {
+            let operator = self.advance();
+            let initializer = self.expression();
+            Statement::Declaration {
+                name,
+                operator: Some(operator),
+                initializer: Some(initializer),
+            }
+        } else {
+            Statement::Declaration {
+                name,
+                operator: None,
+                initializer: None,
+            }
+        };
+
+        match self.eat(Kind::Semicolon, "Expected ';' after initializer.") {
+            Ok(_) => statement,
+            Err(_) => {
+                self.synchronize();
+                Statement::None
+            }
+        }
     }
 
     fn statement(&mut self) -> Statement {
@@ -79,6 +118,30 @@ impl Parser {
     }
 
     fn expression(&mut self) -> Expression {
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> Expression {
+        let expr = self.logic_or();
+
+        if self.current.kind == Kind::Equal {
+            let token = self.advance();
+            let rvalue = self.assignment();
+            Expression::Assignment {
+                lvalue: Box::new(expr),
+                token,
+                rvalue: Box::new(rvalue),
+            }
+        } else {
+            expr
+        }
+    }
+
+    fn logic_or(&mut self) -> Expression {
+        self.logic_and()
+    }
+
+    fn logic_and(&mut self) -> Expression {
         self.equality()
     }
 
@@ -185,6 +248,9 @@ impl Parser {
             },
             Kind::False => Expression::False {
                 literal: self.advance(),
+            },
+            Kind::IdentifierLiteral => Expression::Variable {
+                name: self.advance(),
             },
             Kind::NumberLiteral => self.number(),
             Kind::StringLiteral => self.string(),

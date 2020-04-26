@@ -3,7 +3,7 @@ use crate::object::Obj;
 use crate::value::Value;
 
 use num_traits::FromPrimitive;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, FromPrimitive, ToPrimitive)]
 pub enum OpCode {
@@ -25,6 +25,12 @@ pub enum OpCode {
     Equal,
     Print,
     Pop,
+    DeclareGlobal,
+    DeclareLongGlobal,
+    GetGlobal,
+    SetGlobal,
+    GetLongGlobal,
+    SetLongGlobal,
 }
 
 #[derive(Debug)]
@@ -32,6 +38,7 @@ pub struct VM {
     ip: usize,
     chunk: Executable,
     stack: VecDeque<Value>,
+    globals: HashMap<String, Value>,
 }
 
 #[derive(Debug)]
@@ -46,6 +53,7 @@ impl VM {
             ip: 0,
             chunk: Executable::new(String::from("dummy chunk")),
             stack: VecDeque::new(),
+            globals: HashMap::new(),
         }
     }
 
@@ -109,6 +117,105 @@ impl VM {
                     Err(e) => return Err(e),
                 },
                 Some(OpCode::Print) => println!("{:}", self.pop()),
+                Some(OpCode::GetGlobal) => {
+                    let index = self.read_byte() as u16;
+                    let name_arg = self.chunk.get_constant(index).clone();
+                    if let Value::Obj(Obj::String(name)) = name_arg {
+                        let var_value = match self.globals.get(&*name) {
+                            Some(value) => value.clone(),
+                            None => {
+                                return Err(RuntimeError {
+                                    message: format!(
+                                        "Attempted to get unknown variable {:?}",
+                                        name
+                                    ),
+                                    line: self.chunk.lines[self.ip - 2],
+                                })
+                            }
+                        };
+                        self.push(var_value);
+                    } else {
+                        panic!("Attempt to assign to global {:?}", self.peek(0))
+                    }
+                }
+                Some(OpCode::GetLongGlobal) => {
+                    let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
+                    let name_arg = self.chunk.get_constant(index).clone();
+                    if let Value::Obj(Obj::String(name)) = name_arg {
+                        let var_value = match self.globals.get(&*name) {
+                            Some(value) => value.clone(),
+                            None => {
+                                return Err(RuntimeError {
+                                    message: format!(
+                                        "Attempted to get unknown variable {:?}",
+                                        name
+                                    ),
+                                    line: self.chunk.lines[self.ip - 3],
+                                })
+                            }
+                        };
+                        self.push(var_value);
+                    } else {
+                        panic!("Attempt to assign to global {:?}", self.peek(0))
+                    }
+                }
+                Some(OpCode::SetGlobal) => {
+                    let index = self.read_byte() as u16;
+                    if let Value::Obj(Obj::String(name)) = self.chunk.get_constant(index).clone() {
+                        if self.globals.contains_key(&*name) {
+                            self.globals
+                                .insert(name.clone().to_string(), self.peek(0).clone());
+                        } else {
+                            return Err(RuntimeError {
+                                message: format!("Assigned to undeclared global {:?}", name),
+                                line: self.chunk.lines[self.ip - 2],
+                            });
+                        }
+                    } else {
+                        panic!("Invalid SetGlobal operand, references {:?}", self.peek(0))
+                    }
+                }
+                Some(OpCode::SetLongGlobal) => {
+                    let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
+                    if let Value::Obj(Obj::String(name)) = self.chunk.get_constant(index).clone() {
+                        if self.globals.contains_key(&*name) {
+                            self.globals
+                                .insert(name.clone().to_string(), self.peek(0).clone());
+                        } else {
+                            return Err(RuntimeError {
+                                message: format!("Assigned to undeclared global {:?}", name),
+                                line: self.chunk.lines[self.ip - 3],
+                            });
+                        }
+                    } else {
+                        panic!(
+                            "Invalid SetLongGlobal operand, references {:?}",
+                            self.peek(0)
+                        )
+                    }
+                }
+                Some(OpCode::DeclareGlobal) => {
+                    let index = self.read_byte() as u16;
+                    if let Value::Obj(Obj::String(name)) = self.chunk.get_constant(index).clone() {
+                        self.globals.insert(name.clone().to_string(), Value::Nil);
+                    } else {
+                        panic!(
+                            "Invalid SetLongGlobal operand, references {:?}",
+                            self.peek(0)
+                        )
+                    }
+                }
+                Some(OpCode::DeclareLongGlobal) => {
+                    let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
+                    if let Value::Obj(Obj::String(name)) = self.chunk.get_constant(index).clone() {
+                        self.globals.insert(name.clone().to_string(), Value::Nil);
+                    } else {
+                        panic!(
+                            "Invalid SetLongGlobal operand, references {:?}",
+                            self.peek(0)
+                        )
+                    }
+                }
                 None => {
                     return Err(RuntimeError {
                         message: String::from(format!(
@@ -120,6 +227,7 @@ impl VM {
                 }
             }
             self.print_stack();
+            println!("globals: {:?}", self.globals);
         }
     }
 

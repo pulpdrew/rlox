@@ -14,6 +14,14 @@ pub enum Expression {
         operator: Token,
         right: Box<Expression>,
     },
+    Assignment {
+        lvalue: Box<Expression>,
+        token: Token,
+        rvalue: Box<Expression>,
+    },
+    Variable {
+        name: Token,
+    },
     Constant {
         value: Value,
         literal: Token,
@@ -41,6 +49,11 @@ pub enum Statement {
         keyword: Token,
         expression: Box<Expression>,
         semi: Token,
+    },
+    Declaration {
+        name: Token,
+        operator: Option<Token>,
+        initializer: Option<Expression>,
     },
     /// The None variant indicates a parsing failure. Any AST
     /// with a None node is invalid and should not be compiled.

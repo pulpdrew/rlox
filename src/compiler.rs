@@ -1,7 +1,10 @@
 use crate::ast::{Expression, Statement};
 use crate::executable::Executable;
+use crate::object::Obj;
 use crate::token::Kind;
+use crate::value::Value;
 use crate::vm::OpCode;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Compiler {}
@@ -34,6 +37,23 @@ impl Compiler {
                 self.compile_expression(chunk, *expression);
                 chunk.push_opcode(OpCode::Print, keyword.line);
             }
+            Statement::Declaration {
+                name,
+                operator,
+                initializer,
+            } => {
+                let name_value = Value::Obj(Obj::String(Rc::new(name.string)));
+                chunk.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), name.line);
+                if let Some(init_expression) = initializer {
+                    self.compile_expression(chunk, init_expression);
+                    chunk.push_constant_inst(
+                        OpCode::SetGlobal,
+                        name_value,
+                        operator.as_ref().unwrap().line,
+                    );
+                    chunk.push_opcode(OpCode::Pop, operator.unwrap().line)
+                }
+            }
             Statement::None => panic!("Cannot compile invalid ast."),
         }
     }
@@ -41,7 +61,7 @@ impl Compiler {
     fn compile_expression(&mut self, chunk: &mut Executable, expression: Expression) {
         match expression {
             Expression::Constant { value, literal } => {
-                chunk.push_constant(value, literal.line);
+                chunk.push_constant_inst(OpCode::Constant, value, literal.line);
             }
             Expression::Unary {
                 operator,
@@ -77,6 +97,23 @@ impl Compiler {
                     }
                     _ => panic!("Invalid binary operator {:?}", operator),
                 }
+            }
+            Expression::Assignment {
+                lvalue,
+                token,
+                rvalue,
+            } => {
+                if let Expression::Variable { name } = *lvalue {
+                    self.compile_expression(chunk, *rvalue);
+                    let name_value = Value::Obj(Obj::String(Rc::new(name.string)));
+                    chunk.push_constant_inst(OpCode::SetGlobal, name_value, token.line);
+                } else {
+                    panic!("Assignment to non-lvalue {:?}", lvalue);
+                }
+            }
+            Expression::Variable { name } => {
+                let name_value = Value::Obj(Obj::String(Rc::new(name.string)));
+                chunk.push_constant_inst(OpCode::GetGlobal, name_value, name.line);
             }
             Expression::True { literal } => chunk.push_opcode(OpCode::True, literal.line),
             Expression::False { literal } => chunk.push_opcode(OpCode::False, literal.line),

@@ -42,17 +42,17 @@ impl Executable {
     /// access that constant.
     ///
     /// The executable may have no more that `u16::max_value` constants.
-    pub fn push_constant(&mut self, value: Value, line: usize) -> u16 {
+    pub fn push_constant_inst(&mut self, op: OpCode, value: Value, line: usize) -> u16 {
         self.constants.push(value);
         self.lines.push(line);
 
         let index: usize = self.constants.len() - 1;
         if index <= (u8::max_value() as usize) {
-            self.code.push(to_byte(OpCode::Constant));
+            self.code.push(to_byte(op));
             self.code.push(index as u8);
             self.lines.push(line);
         } else if index <= u16::max_value() as usize {
-            self.code.push(to_byte(OpCode::LongConstant));
+            self.code.push(to_byte(op) + 1);
             self.code.push((index / 256) as u8);
             self.code.push((index % 256) as u8);
             self.lines.push(line);
@@ -115,6 +115,14 @@ impl Executable {
             Some(OpCode::False) => self.simple_instruction("False", offset),
             Some(OpCode::Print) => self.simple_instruction("Print", offset),
             Some(OpCode::Pop) => self.simple_instruction("Pop", offset),
+            Some(OpCode::SetGlobal) => self.constant_instruction("SetGlobal", offset),
+            Some(OpCode::SetLongGlobal) => self.long_constant_instruction("SetLongGlobal", offset),
+            Some(OpCode::GetGlobal) => self.constant_instruction("GetGlobal", offset),
+            Some(OpCode::GetLongGlobal) => self.long_constant_instruction("GetLongGlobal", offset),
+            Some(OpCode::DeclareGlobal) => self.constant_instruction("DeclareGlobal", offset),
+            Some(OpCode::DeclareLongGlobal) => {
+                self.long_constant_instruction("DeclareLongGlobal", offset)
+            }
             None => {
                 println!("Unknown opcode {}", self[offset]);
                 offset + 1
