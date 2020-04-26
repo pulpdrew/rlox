@@ -2,6 +2,7 @@ use crate::object::Obj;
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops;
+use std::rc::Rc;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -66,8 +67,14 @@ impl ops::Add for Value {
             } else {
                 panic!("Attempted to add [Number] + [Not a number]");
             }
+        } else if let Value::Obj(Obj::String(left)) = self {
+            if let Value::Obj(Obj::String(right)) = rhs {
+                Value::Obj(Obj::String(Rc::new(format!("{}{}", left, right))))
+            } else {
+                panic!("Attempted to add [String] + [Not a String]");
+            }
         } else {
-            panic!("Attempted to add [Not a number] + [??}");
+            panic!("Attempted apply '+' to something that wasn't a number or string.");
         }
     }
 }

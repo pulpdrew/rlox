@@ -1,4 +1,5 @@
 use crate::executable::Executable;
+use crate::object::Obj;
 use crate::value::Value;
 
 use num_traits::FromPrimitive;
@@ -128,8 +129,7 @@ impl VM {
 
         // Check for numeric operands, when apropriate
         match op {
-            OpCode::Add
-            | OpCode::Subtract
+            OpCode::Subtract
             | OpCode::Multiply
             | OpCode::Divide
             | OpCode::Less
@@ -138,11 +138,37 @@ impl VM {
             | OpCode::GreaterEqual => {
                 if !left.is_number() || !right.is_number() {
                     return Err(RuntimeError {
-                        message: format!("Cannot apply {:?} non-numeric types", op),
+                        message: format!("Cannot apply {:?} to non-numeric types", op),
                         line: self.chunk.lines[self.ip - 1],
                     });
                 }
             }
+            OpCode::Add => match left {
+                Value::Number(_) => match right {
+                    Value::Number(_) => {}
+                    _ => {
+                        return Err(RuntimeError {
+                            message: String::from("Cannot apply '+' to Number and Non-Number"),
+                            line: self.chunk.lines[self.ip - 1],
+                        });
+                    }
+                },
+                Value::Obj(Obj::String(_)) => match right {
+                    Value::Obj(Obj::String(_)) => {}
+                    _ => {
+                        return Err(RuntimeError {
+                            message: String::from("Cannot apply '+' to String and Non-String"),
+                            line: self.chunk.lines[self.ip - 1],
+                        });
+                    }
+                },
+                _ => {
+                    return Err(RuntimeError {
+                        message: String::from("Cannot apply '+' to non-numeric or non-string type"),
+                        line: self.chunk.lines[self.ip - 1],
+                    });
+                }
+            },
             _ => {}
         }
 

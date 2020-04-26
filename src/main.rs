@@ -39,7 +39,7 @@ fn run(source: String) {
     let mut vm = VM::new();
     match vm.interpret(binary) {
         Ok(()) => return,
-        Err(e) => eprintln!("{}", e.message),
+        Err(e) => eprintln!("Err [line {}]: {}", e.line, e.message),
     }
 }
 
