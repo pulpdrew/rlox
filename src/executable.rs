@@ -113,6 +113,7 @@ impl Executable {
             Some(OpCode::Not) => self.simple_instruction("Not", offset),
             Some(OpCode::True) => self.simple_instruction("True", offset),
             Some(OpCode::False) => self.simple_instruction("False", offset),
+            Some(OpCode::Print) => self.simple_instruction("Print", offset),
             Some(OpCode::Pop) => self.simple_instruction("Pop", offset),
             None => {
                 println!("Unknown opcode {}", self[offset]);

@@ -22,6 +22,7 @@ pub enum OpCode {
     GreaterEqual,
     Not,
     Equal,
+    Print,
     Pop,
 }
 
@@ -106,6 +107,7 @@ impl VM {
                     Ok(()) => {}
                     Err(e) => return Err(e),
                 },
+                Some(OpCode::Print) => println!("{:?}", self.pop()),
                 None => {
                     return Err(RuntimeError {
                         message: String::from(format!(

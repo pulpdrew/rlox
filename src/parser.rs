@@ -40,10 +40,29 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Statement {
-        let expression = self.expression();
+        let statement = match self.current.kind {
+            Kind::Print => self.print_statement(),
+            _ => match self.eat(Kind::Semicolon, "Expected ';' after expression") {
+                Ok(semi) => Statement::Expression {
+                    expression: Box::new(self.expression()),
+                    semi,
+                },
+                Err(_) => {
+                    self.synchronize();
+                    Statement::None
+                }
+            },
+        };
 
+        statement
+    }
+
+    fn print_statement(&mut self) -> Statement {
+        let keyword = self.advance();
+        let expression = self.expression();
         match self.eat(Kind::Semicolon, "Expected ';' after expression") {
-            Ok(semi) => Statement::Expression {
+            Ok(semi) => Statement::Print {
+                keyword,
                 expression: Box::new(expression),
                 semi,
             },

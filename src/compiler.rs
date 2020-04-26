@@ -26,6 +26,14 @@ impl Compiler {
                 self.compile_expression(chunk, *expression);
                 chunk.push_opcode(OpCode::Pop, semi.line);
             }
+            Statement::Print {
+                keyword,
+                expression,
+                ..
+            } => {
+                self.compile_expression(chunk, *expression);
+                chunk.push_opcode(OpCode::Print, keyword.line);
+            }
             Statement::None => panic!("Cannot compile invalid ast."),
         }
     }

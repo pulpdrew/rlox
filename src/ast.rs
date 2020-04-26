@@ -37,6 +37,11 @@ pub enum Statement {
         expression: Box<Expression>,
         semi: Token,
     },
+    Print {
+        keyword: Token,
+        expression: Box<Expression>,
+        semi: Token,
+    },
     /// The None variant indicates a parsing failure. Any AST
     /// with a None node is invalid and should not be compiled.
     None,
