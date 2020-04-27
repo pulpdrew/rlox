@@ -1,3 +1,6 @@
+use crate::token::Span;
+use std::cmp;
+
 #[derive(Debug)]
 pub struct ErrorHandler {
     source: String,
@@ -8,32 +11,34 @@ impl ErrorHandler {
         ErrorHandler { source }
     }
 
-    pub fn error(&self, index_in_source: usize, message: &str) {
-        let index_in_source = if index_in_source == self.source.len() {
-            index_in_source - 1
-        } else {
-            index_in_source
-        };
-
-        let (line_no, line_start_index, line) = self.get_line(index_in_source);
-        eprintln!("Error [line {}]: {}", line_no, message);
-        eprintln!("{}", line);
-        for _ in 1..(index_in_source - line_start_index) {
-            eprint!(" ")
-        }
-        eprintln!("^");
+    pub fn error(&self, span: &Span, message: &str) {
+        eprintln!("Error: {}", message);
+        self.print_underlined_source(span);
     }
 
-    fn get_line(&self, index_in_source: usize) -> (usize, usize, &str) {
-        let mut index_counter = 0;
-        let mut line_counter = 1;
+    fn print_underlined_source(&self, span: &Span) {
+        let mut line_start: usize = 0;
+        let mut line_counter: usize = 1;
         for line in self.source.split("\n") {
-            if index_counter + line.len() >= index_in_source {
-                return (line_counter, index_counter, line);
+            if line_start <= span.end && line_start + line.len() >= span.start {
+                let underline_start = span.start - line_start;
+                let underline_end = cmp::min(line.len() + 1, span.end - line_start);
+                Self::print_underlined(line, line_counter, underline_start, underline_end);
             }
-            index_counter += line.len();
+            line_start += line.len() + 1;
             line_counter += 1;
         }
-        panic!("Line not found. Index: {}", index_in_source);
+    }
+
+    fn print_underlined(line: &str, num: usize, start: usize, end: usize) {
+        println!("{:4}: {}", num, line);
+
+        for _ in 0..start + 6 {
+            print!(" ");
+        }
+        for _ in start..end {
+            print!("^")
+        }
+        println!();
     }
 }

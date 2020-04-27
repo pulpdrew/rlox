@@ -1,5 +1,5 @@
 use crate::token::Kind;
-use crate::token::Token;
+use crate::token::{Span, Token};
 use std::collections::VecDeque;
 
 #[derive(Debug)]
@@ -130,11 +130,14 @@ impl Scanner {
     }
 
     fn make_token(&mut self, kind: Kind, count: usize) -> Token {
+        let span = match kind {
+            Kind::Eof => Span::new(self.index, self.index + 1),
+            _ => Span::new(self.index, self.index + count),
+        };
         Token {
             kind,
-            line: self.line,
             string: self.read_front(count),
-            index_in_source: self.index,
+            span,
         }
     }
 

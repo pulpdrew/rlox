@@ -1,3 +1,12 @@
+use std::cmp;
+
+#[derive(Debug, Clone)]
+pub struct Token {
+    pub kind: Kind,
+    pub span: Span,
+    pub string: String,
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Kind {
     LeftBrace,
@@ -46,10 +55,23 @@ pub enum Kind {
     Error,
 }
 
-#[derive(Debug, Clone)]
-pub struct Token {
-    pub kind: Kind,
-    pub line: usize,
-    pub index_in_source: usize,
-    pub string: String,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl Span {
+    pub fn new(start: usize, end: usize) -> Self {
+        Span { start, end }
+    }
+    pub fn merge(spans: Vec<&Span>) -> Self {
+        let mut start = 0;
+        let mut end = 0;
+        for span in spans {
+            start = cmp::min(start, span.start);
+            end = cmp::min(end, span.end);
+        }
+        Span::new(start, end)
+    }
 }

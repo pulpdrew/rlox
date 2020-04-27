@@ -1,3 +1,4 @@
+use crate::token::Span;
 use crate::value::Value;
 use crate::vm::OpCode;
 use num_traits::FromPrimitive;
@@ -15,7 +16,7 @@ pub struct Executable {
 
     /// The source line numbers associated with each OpCode.
     /// `lines[i]` is the source line number of `code[i]`.
-    pub lines: Vec<usize>, // TODO change to index in source
+    pub spans: Vec<Span>,
 
     /// The name of the executable unit. Could be a function name or <script>
     pub name: String,
@@ -26,37 +27,37 @@ impl Executable {
     pub fn new(name: String) -> Self {
         Executable {
             code: vec![],
-            lines: vec![],
+            spans: vec![],
             constants: vec![],
             name,
         }
     }
 
     /// Append an OpCode to the Executable
-    pub fn push_opcode(&mut self, code: OpCode, line: usize) {
+    pub fn push_opcode(&mut self, code: OpCode, span: Span) {
         self.code.push(to_byte(code));
-        self.lines.push(line);
+        self.spans.push(span);
     }
 
     /// Add a constant to the list of constants and an instruction to
     /// access that constant.
     ///
     /// The executable may have no more that `u16::max_value` constants.
-    pub fn push_constant_inst(&mut self, op: OpCode, value: Value, line: usize) -> u16 {
+    pub fn push_constant_inst(&mut self, op: OpCode, value: Value, span: Span) -> u16 {
         self.constants.push(value);
-        self.lines.push(line);
+        self.spans.push(span);
 
         let index: usize = self.constants.len() - 1;
         if index <= (u8::max_value() as usize) {
             self.code.push(to_byte(op));
             self.code.push(index as u8);
-            self.lines.push(line);
+            self.spans.push(span);
         } else if index <= u16::max_value() as usize {
             self.code.push(to_byte(op) + 1);
             self.code.push((index / 256) as u8);
             self.code.push((index % 256) as u8);
-            self.lines.push(line);
-            self.lines.push(line);
+            self.spans.push(span);
+            self.spans.push(span);
         } else {
             eprintln!("Cannot have more than {} constants", u16::max_value())
         }
@@ -91,8 +92,8 @@ impl Executable {
     /// and print the result
     pub fn disassemble_instruction(&self, offset: usize) -> usize {
         print!("{:0>5}  ", offset);
-        if offset == 0 || self.lines[offset] != self.lines[offset - 1] {
-            print!("{:0>5}  ", self.lines[offset]);
+        if offset == 0 || self.spans[offset] != self.spans[offset - 1] {
+            print!("{:0>5?}  ", self.spans[offset]);
         } else {
             print!("    |  ");
         }
@@ -111,8 +112,6 @@ impl Executable {
             Some(OpCode::GreaterEqual) => self.simple_instruction("GreaterEqual", offset),
             Some(OpCode::Equal) => self.simple_instruction("Equal", offset),
             Some(OpCode::Not) => self.simple_instruction("Not", offset),
-            Some(OpCode::True) => self.simple_instruction("True", offset),
-            Some(OpCode::False) => self.simple_instruction("False", offset),
             Some(OpCode::Print) => self.simple_instruction("Print", offset),
             Some(OpCode::Pop) => self.simple_instruction("Pop", offset),
             Some(OpCode::SetGlobal) => self.constant_instruction("SetGlobal", offset),

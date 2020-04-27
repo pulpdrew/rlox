@@ -1,7 +1,7 @@
-use crate::ast::{Expression, Statement};
+use crate::ast::{AstNode, Expression, Statement};
 use crate::executable::Executable;
 use crate::object::Obj;
-use crate::token::Kind;
+use crate::token::{Kind, Span};
 use crate::value::Value;
 use crate::vm::OpCode;
 use std::rc::Rc;
@@ -13,64 +13,66 @@ impl Compiler {
     pub fn new() -> Self {
         Compiler {}
     }
-    pub fn compile(&mut self, program: Vec<Statement>) -> Executable {
+    pub fn compile(&mut self, program: Vec<AstNode>) -> Executable {
         let mut chunk = Executable::new(String::from("script"));
-        for statement in program {
-            self.compile_statement(&mut chunk, statement);
+        for node in program {
+            self.compile_statement(&mut chunk, node.statement());
         }
 
-        chunk.push_opcode(OpCode::Return, *chunk.lines.last().unwrap_or(&0));
+        chunk.push_opcode(
+            OpCode::Return,
+            *chunk.spans.last().unwrap_or(&Span::new(0, 0)),
+        );
         chunk
     }
 
-    fn compile_statement(&mut self, chunk: &mut Executable, statement: Statement) {
+    fn compile_statement(&mut self, chunk: &mut Executable, statement: &Statement) {
         match statement {
-            Statement::Expression { expression, semi } => {
-                self.compile_expression(chunk, *expression);
-                chunk.push_opcode(OpCode::Pop, semi.line);
+            Statement::Expression { expression } => {
+                self.compile_expression(chunk, expression.expression());
+                chunk.push_opcode(OpCode::Pop, expression.span);
             }
             Statement::Print {
                 keyword,
                 expression,
                 ..
             } => {
-                self.compile_expression(chunk, *expression);
-                chunk.push_opcode(OpCode::Print, keyword.line);
+                self.compile_expression(chunk, expression.expression());
+                chunk.push_opcode(OpCode::Print, keyword.span);
             }
             Statement::Declaration {
                 name,
                 operator,
                 initializer,
             } => {
-                let name_value = Value::Obj(Obj::String(Rc::new(name.string)));
-                chunk.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), name.line);
+                let name_value = Value::Obj(Obj::String(Rc::new(name.string.clone())));
+                chunk.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), name.span);
                 if let Some(init_expression) = initializer {
-                    self.compile_expression(chunk, init_expression);
+                    self.compile_expression(chunk, init_expression.expression());
                     chunk.push_constant_inst(
                         OpCode::SetGlobal,
                         name_value,
-                        operator.as_ref().unwrap().line,
+                        operator.as_ref().unwrap().span,
                     );
-                    chunk.push_opcode(OpCode::Pop, operator.unwrap().line)
+                    chunk.push_opcode(OpCode::Pop, operator.as_ref().unwrap().span)
                 }
             }
-            Statement::None => panic!("Cannot compile invalid ast."),
         }
     }
 
-    fn compile_expression(&mut self, chunk: &mut Executable, expression: Expression) {
+    fn compile_expression(&mut self, chunk: &mut Executable, expression: &Expression) {
         match expression {
             Expression::Constant { value, literal } => {
-                chunk.push_constant_inst(OpCode::Constant, value, literal.line);
+                chunk.push_constant_inst(OpCode::Constant, value.clone(), literal.span);
             }
             Expression::Unary {
                 operator,
                 expression,
             } => {
-                self.compile_expression(chunk, *expression);
+                self.compile_expression(chunk, expression.expression());
                 match operator.kind {
-                    Kind::Minus => chunk.push_opcode(OpCode::Negate, operator.line),
-                    Kind::Bang => chunk.push_opcode(OpCode::Not, operator.line),
+                    Kind::Minus => chunk.push_opcode(OpCode::Negate, operator.span),
+                    Kind::Bang => chunk.push_opcode(OpCode::Not, operator.span),
                     _ => panic!("Invalid unary operator {:?}", operator),
                 }
             }
@@ -79,45 +81,42 @@ impl Compiler {
                 operator,
                 right,
             } => {
-                self.compile_expression(chunk, *left);
-                self.compile_expression(chunk, *right);
+                self.compile_expression(chunk, left.expression());
+                self.compile_expression(chunk, right.expression());
                 match operator.kind {
-                    Kind::Plus => chunk.push_opcode(OpCode::Add, operator.line),
-                    Kind::Minus => chunk.push_opcode(OpCode::Subtract, operator.line),
-                    Kind::Star => chunk.push_opcode(OpCode::Multiply, operator.line),
-                    Kind::Slash => chunk.push_opcode(OpCode::Divide, operator.line),
-                    Kind::Less => chunk.push_opcode(OpCode::Less, operator.line),
-                    Kind::LessEqual => chunk.push_opcode(OpCode::LessEqual, operator.line),
-                    Kind::Greater => chunk.push_opcode(OpCode::Greater, operator.line),
-                    Kind::GreaterEqual => chunk.push_opcode(OpCode::GreaterEqual, operator.line),
-                    Kind::EqualEqual => chunk.push_opcode(OpCode::Equal, operator.line),
+                    Kind::Plus => chunk.push_opcode(OpCode::Add, operator.span),
+                    Kind::Minus => chunk.push_opcode(OpCode::Subtract, operator.span),
+                    Kind::Star => chunk.push_opcode(OpCode::Multiply, operator.span),
+                    Kind::Slash => chunk.push_opcode(OpCode::Divide, operator.span),
+                    Kind::Less => chunk.push_opcode(OpCode::Less, operator.span),
+                    Kind::LessEqual => chunk.push_opcode(OpCode::LessEqual, operator.span),
+                    Kind::Greater => chunk.push_opcode(OpCode::Greater, operator.span),
+                    Kind::GreaterEqual => chunk.push_opcode(OpCode::GreaterEqual, operator.span),
+                    Kind::EqualEqual => chunk.push_opcode(OpCode::Equal, operator.span),
                     Kind::BangEqual => {
-                        chunk.push_opcode(OpCode::Equal, operator.line);
-                        chunk.push_opcode(OpCode::Not, operator.line);
+                        chunk.push_opcode(OpCode::Equal, operator.span);
+                        chunk.push_opcode(OpCode::Not, operator.span);
                     }
                     _ => panic!("Invalid binary operator {:?}", operator),
                 }
             }
             Expression::Assignment {
                 lvalue,
-                token,
+                operator,
                 rvalue,
             } => {
-                if let Expression::Variable { name } = *lvalue {
-                    self.compile_expression(chunk, *rvalue);
-                    let name_value = Value::Obj(Obj::String(Rc::new(name.string)));
-                    chunk.push_constant_inst(OpCode::SetGlobal, name_value, token.line);
+                if let Expression::Variable { name } = lvalue.expression() {
+                    self.compile_expression(chunk, rvalue.expression());
+                    let name_value = Value::Obj(Obj::String(Rc::new(name.string.clone())));
+                    chunk.push_constant_inst(OpCode::SetGlobal, name_value, operator.span);
                 } else {
                     panic!("Assignment to non-lvalue {:?}", lvalue);
                 }
             }
             Expression::Variable { name } => {
-                let name_value = Value::Obj(Obj::String(Rc::new(name.string)));
-                chunk.push_constant_inst(OpCode::GetGlobal, name_value, name.line);
+                let name_value = Value::Obj(Obj::String(Rc::new(name.string.clone())));
+                chunk.push_constant_inst(OpCode::GetGlobal, name_value, name.span);
             }
-            Expression::True { literal } => chunk.push_opcode(OpCode::True, literal.line),
-            Expression::False { literal } => chunk.push_opcode(OpCode::False, literal.line),
-            Expression::None => panic!("Cannot compile invalid ast."),
         }
     }
 }

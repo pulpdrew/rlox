@@ -1,8 +1,8 @@
-use crate::ast::{Expression, Statement};
+use crate::ast::{AstNode, Expression, Statement};
 use crate::error::ErrorHandler;
 use crate::object::Obj;
 use crate::scanner::Scanner;
-use crate::token::{Kind, Token};
+use crate::token::{Kind, Span, Token};
 use crate::value::Value;
 use std::rc::Rc;
 
@@ -32,7 +32,7 @@ impl Parser {
         }
     }
 
-    pub fn parse_program(&mut self) -> Vec<Statement> {
+    pub fn parse_program(&mut self) -> Vec<AstNode> {
         let mut program = vec![];
         while self.current.kind != Kind::Eof {
             program.push(self.declaration());
@@ -41,58 +41,80 @@ impl Parser {
         program
     }
 
-    fn declaration(&mut self) -> Statement {
+    fn declaration(&mut self) -> AstNode {
         match self.current.kind {
             Kind::Var => self.var_declaration(),
             _ => self.statement(),
         }
     }
 
-    fn var_declaration(&mut self) -> Statement {
-        self.advance();
+    fn var_declaration(&mut self) -> AstNode {
+        let keyword = self.advance();
+
         let name = match self.eat(Kind::IdentifierLiteral, "Expected identifier after 'var'.") {
             Ok(t) => t,
-            Err(()) => return Statement::None,
+            Err(()) => return AstNode::none(),
         };
 
-        let statement = if self.current.kind == Kind::Equal {
+        let node = if self.current.kind == Kind::Equal {
             let operator = self.advance();
             let initializer = self.expression();
-            Statement::Declaration {
-                name,
-                operator: Some(operator),
-                initializer: Some(initializer),
-            }
+            let span = Span::merge(vec![
+                &keyword.span,
+                &name.span,
+                &operator.span,
+                &initializer.span,
+            ]);
+            AstNode::from_statement(
+                Statement::Declaration {
+                    name,
+                    operator: Some(operator),
+                    initializer: Some(initializer),
+                },
+                span,
+            )
         } else {
-            Statement::Declaration {
-                name,
-                operator: None,
-                initializer: None,
-            }
+            let span = Span::merge(vec![&keyword.span, &name.span]);
+            AstNode::from_statement(
+                Statement::Declaration {
+                    name,
+                    operator: None,
+                    initializer: None,
+                },
+                span,
+            )
         };
 
         match self.eat(Kind::Semicolon, "Expected ';' after initializer.") {
-            Ok(_) => statement,
+            Ok(semi) => {
+                let span = Span::merge(vec![&node.span, &semi.span]);
+                AstNode::from_ast_node(node, span)
+            }
             Err(_) => {
                 self.synchronize();
-                Statement::None
+                AstNode::none()
             }
         }
     }
 
-    fn statement(&mut self) -> Statement {
+    fn statement(&mut self) -> AstNode {
         let statement = match self.current.kind {
             Kind::Print => self.print_statement(),
             _ => {
                 let expression = self.expression();
                 match self.eat(Kind::Semicolon, "Expected ';' after expression") {
-                    Ok(semi) => Statement::Expression {
-                        expression: Box::new(expression),
-                        semi,
-                    },
+                    Ok(semi) => {
+                        let new_span = Span::merge(vec![&expression.span, &semi.span]);
+                        AstNode::from_statement(
+                            Statement::Expression {
+                                expression: Box::new(expression),
+                            },
+                            new_span,
+                        )
+                    }
                     Err(_) => {
                         self.synchronize();
-                        Statement::None
+                        AstNode::none()
                     }
                 }
             }
@@ -101,172 +123,237 @@ impl Parser {
         statement
     }
 
-    fn print_statement(&mut self) -> Statement {
+    fn print_statement(&mut self) -> AstNode {
         let keyword = self.advance();
         let expression = self.expression();
-        match self.eat(Kind::Semicolon, "Expected ';' after expression") {
-            Ok(semi) => Statement::Print {
-                keyword,
-                expression: Box::new(expression),
-                semi,
-            },
+        match self.eat(Kind::Semicolon, "Expected ';' after print expression") {
+            Ok(semi) => {
+                let new_span = Span::merge(vec![&keyword.span, &expression.span, &semi.span]);
+                AstNode::from_statement(
+                    Statement::Print {
+                        keyword,
+                        expression: Box::new(expression),
+                    },
+                    new_span,
+                )
+            }
             Err(_) => {
                 self.synchronize();
-                Statement::None
+                AstNode::none()
             }
         }
     }
 
-    fn expression(&mut self) -> Expression {
+    fn expression(&mut self) -> AstNode {
         self.assignment()
     }
 
-    fn assignment(&mut self) -> Expression {
-        let expr = self.logic_or();
+    fn assignment(&mut self) -> AstNode {
+        let node = self.logic_or();
 
         if self.current.kind == Kind::Equal {
-            let token = self.advance();
+            let operator = self.advance();
             let rvalue = self.assignment();
-            Expression::Assignment {
-                lvalue: Box::new(expr),
-                token,
-                rvalue: Box::new(rvalue),
-            }
+            let new_span = Span::merge(vec![&node.span, &operator.span, &rvalue.span]);
+
+            AstNode::from_expression(
+                Expression::Assignment {
+                    lvalue: Box::new(node),
+                    operator,
+                    rvalue: Box::new(rvalue),
+                },
+                new_span,
+            )
         } else {
-            expr
+            node
         }
     }
 
-    fn logic_or(&mut self) -> Expression {
+    fn logic_or(&mut self) -> AstNode {
         self.logic_and()
     }
 
-    fn logic_and(&mut self) -> Expression {
+    fn logic_and(&mut self) -> AstNode {
         self.equality()
     }
 
-    fn equality(&mut self) -> Expression {
-        let mut expr = self.comparison();
+    fn equality(&mut self) -> AstNode {
+        let mut node = self.comparison();
         loop {
             match self.current.kind {
                 Kind::EqualEqual | Kind::BangEqual => {
                     let operator = self.advance();
                     let right = self.comparison();
-                    expr = Expression::Binary {
-                        left: Box::new(expr),
-                        operator,
-                        right: Box::new(right),
-                    }
+                    let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
+
+                    node = AstNode::from_expression(
+                        Expression::Binary {
+                            left: Box::new(node),
+                            operator,
+                            right: Box::new(right),
+                        },
+                        new_span,
+                    );
                 }
                 _ => break,
             }
         }
-        expr
+        node
     }
 
-    fn comparison(&mut self) -> Expression {
-        let mut expr = self.addition();
+    fn comparison(&mut self) -> AstNode {
+        let mut node = self.addition();
         loop {
             match self.current.kind {
                 Kind::Less | Kind::LessEqual | Kind::Greater | Kind::GreaterEqual => {
                     let operator = self.advance();
                     let right = self.addition();
-                    expr = Expression::Binary {
-                        left: Box::new(expr),
-                        operator,
-                        right: Box::new(right),
-                    }
+                    let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
+
+                    node = AstNode::from_expression(
+                        Expression::Binary {
+                            left: Box::new(node),
+                            operator,
+                            right: Box::new(right),
+                        },
+                        new_span,
+                    );
                 }
                 _ => break,
             }
         }
-        expr
+        node
     }
 
-    fn addition(&mut self) -> Expression {
-        let mut expr = self.multiplication();
+    fn addition(&mut self) -> AstNode {
+        let mut node = self.multiplication();
 
         while self.current.kind == Kind::Plus || self.current.kind == Kind::Minus {
             let operator = self.advance();
             let right = self.multiplication();
-            expr = Expression::Binary {
-                left: Box::new(expr),
-                operator,
-                right: Box::new(right),
-            }
+            let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
+
+            node = AstNode::from_expression(
+                Expression::Binary {
+                    left: Box::new(node),
+                    operator,
+                    right: Box::new(right),
+                },
+                new_span,
+            );
         }
 
-        expr
+        node
     }
 
-    fn multiplication(&mut self) -> Expression {
-        let mut expr = self.unary();
+    fn multiplication(&mut self) -> AstNode {
+        let mut node = self.unary();
 
         while self.current.kind == Kind::Star || self.current.kind == Kind::Slash {
             let operator = self.advance();
             let right = self.unary();
-            expr = Expression::Binary {
-                left: Box::new(expr),
-                operator,
-                right: Box::new(right),
-            }
+            let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
+
+            node = AstNode::from_expression(
+                Expression::Binary {
+                    left: Box::new(node),
+                    operator,
+                    right: Box::new(right),
+                },
+                new_span,
+            );
         }
 
-        expr
+        node
     }
 
-    fn unary(&mut self) -> Expression {
+    fn unary(&mut self) -> AstNode {
         match self.current.kind {
             Kind::Minus | Kind::Bang => {
                 let operator = self.advance();
                 let expression = self.unary();
-                Expression::Unary {
-                    operator: operator,
-                    expression: Box::new(expression),
-                }
+                let new_span = Span::new(expression.span.start - 1, expression.span.end);
+
+                AstNode::from_expression(
+                    Expression::Unary {
+                        operator: operator,
+                        expression: Box::new(expression),
+                    },
+                    new_span,
+                )
             }
             _ => self.call(),
         }
     }
 
-    fn call(&mut self) -> Expression {
+    fn call(&mut self) -> AstNode {
         self.primary()
     }
 
-    fn primary(&mut self) -> Expression {
+    fn primary(&mut self) -> AstNode {
         match self.current.kind {
             Kind::LeftParen => {
                 self.advance();
                 let expression = self.expression();
                 match self.eat(Kind::RightParen, "Expected ')' after expression.") {
-                    Ok(_) => expression,
-                    Err(()) => Expression::None,
+                    Ok(_) => {
+                        let new_span =
+                            Span::new(expression.span.start - 1, expression.span.end + 1);
+                        AstNode::from_ast_node(expression, new_span)
+                    }
+                    Err(()) => AstNode::none(),
                 }
             }
-            Kind::True => Expression::True {
-                literal: self.advance(),
-            },
-            Kind::False => Expression::False {
-                literal: self.advance(),
-            },
-            Kind::IdentifierLiteral => Expression::Variable {
-                name: self.advance(),
-            },
+            Kind::IdentifierLiteral => {
+                let literal = self.advance();
+                let span = literal.span;
+                AstNode::from_expression(Expression::Variable { name: literal }, span)
+            }
             Kind::NumberLiteral => self.number(),
             Kind::StringLiteral => self.string(),
-            Kind::Nil => Expression::Constant {
-                value: Value::Nil,
-                literal: self.advance(),
-            },
+            Kind::True => {
+                let literal = self.advance();
+                let span = literal.span;
+                AstNode::from_expression(
+                    Expression::Constant {
+                        value: Value::Bool(true),
+                        literal,
+                    },
+                    span,
+                )
+            }
+            Kind::False => {
+                let literal = self.advance();
+                let span = literal.span;
+                AstNode::from_expression(
+                    Expression::Constant {
+                        value: Value::Bool(false),
+                        literal,
+                    },
+                    span,
+                )
+            }
+            Kind::Nil => {
+                let literal = self.advance();
+                let span = literal.span;
+                AstNode::from_expression(
+                    Expression::Constant {
+                        value: Value::Nil,
+                        literal,
+                    },
+                    span,
+                )
+            }
             _ => {
                 self.error_at_current("Expected primary expression.");
-                Expression::None
+                AstNode::none()
             }
         }
     }
 
-    fn number(&mut self) -> Expression {
+    fn number(&mut self) -> AstNode {
         let literal = self.advance();
+        let span = literal.span;
 
         let value = Value::Number(
             literal
@@ -274,15 +361,18 @@ impl Parser {
                 .parse()
                 .expect(format!("Failed to parse '{}' as f64", literal.string).as_str()),
         );
-        Expression::Constant { value, literal }
+
+        AstNode::from_expression(Expression::Constant { literal, value }, span)
     }
 
-    fn string(&mut self) -> Expression {
+    fn string(&mut self) -> AstNode {
         let literal = self.advance();
+        let span = literal.span;
         let value = Value::Obj(Obj::String(Rc::new(String::from(
             &literal.string[1..literal.string.len() - 1],
         ))));
-        Expression::Constant { literal, value }
+
+        AstNode::from_expression(Expression::Constant { literal, value }, span)
     }
 
     fn advance(&mut self) -> Token {
@@ -308,23 +398,23 @@ impl Parser {
     }
 
     fn error_at_next(&mut self, message: &str) {
-        let index_in_source = self.next.index_in_source;
-        self.error_at(index_in_source, message);
+        let span = self.next.span;
+        self.error_at(&span, message);
     }
 
     fn error_at_current(&mut self, message: &str) {
-        let index_in_source = self.current.index_in_source;
-        self.error_at(index_in_source, message);
+        let span = self.current.span;
+        self.error_at(&span, message);
     }
 
-    fn error_at(&mut self, index_in_source: usize, message: &str) {
+    fn error_at(&mut self, span: &Span, message: &str) {
         if self.panic_mode {
             return;
         }
         self.panic_mode = true;
         self.had_error = true;
 
-        self.handler.error(index_in_source, message);
+        self.handler.error(span, message);
     }
 
     fn synchronize(&mut self) {

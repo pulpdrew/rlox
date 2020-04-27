@@ -20,10 +20,9 @@ use std::io::{self, Write};
 use vm::VM;
 
 fn run(source: String) {
-    let handler = error::ErrorHandler::new(source.clone());
-
     // Parse
-    let mut parser = Parser::new(source, handler);
+    let handler = error::ErrorHandler::new(source.clone());
+    let mut parser = Parser::new(source.clone(), handler);
     let ast = parser.parse_program();
     if parser.had_error {
         return;
@@ -37,10 +36,7 @@ fn run(source: String) {
     // Execute
     println!("Interpreting: ");
     let mut vm = VM::new();
-    match vm.interpret(binary) {
-        Ok(()) => return,
-        Err(e) => eprintln!("Err [line {}]: {}", e.line, e.message),
-    }
+    vm.interpret(binary, &error::ErrorHandler::new(source.clone()));
 }
 
 fn run_file(filename: &String) {

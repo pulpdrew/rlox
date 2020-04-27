@@ -1,5 +1,7 @@
+use crate::error::ErrorHandler;
 use crate::executable::Executable;
 use crate::object::Obj;
+use crate::token::Span;
 use crate::value::Value;
 
 use num_traits::FromPrimitive;
@@ -8,8 +10,6 @@ use std::collections::{HashMap, VecDeque};
 #[derive(Debug, FromPrimitive, ToPrimitive)]
 pub enum OpCode {
     Constant,
-    True,
-    False,
     LongConstant,
     Return,
     Add,
@@ -44,7 +44,7 @@ pub struct VM {
 #[derive(Debug)]
 pub struct RuntimeError {
     pub message: String,
-    pub line: usize,
+    pub span: Span,
 }
 
 impl VM {
@@ -57,9 +57,15 @@ impl VM {
         }
     }
 
-    pub fn interpret(&mut self, chunk: Executable) -> Result<(), RuntimeError> {
+    pub fn interpret(&mut self, chunk: Executable, handler: &ErrorHandler) {
         self.chunk = chunk;
-        self.run()
+
+        match self.run() {
+            Ok(()) => {}
+            Err(e) => {
+                handler.error(&e.span, e.message.as_str());
+            }
+        }
     }
 
     fn run<'a>(&mut self) -> Result<(), RuntimeError> {
@@ -84,15 +90,9 @@ impl VM {
                     } else {
                         return Err(RuntimeError {
                             message: String::from("Cannot negate non-numeric types"),
-                            line: self.chunk.lines[self.ip - 1],
+                            span: self.chunk.spans[self.ip - 1],
                         });
                     }
-                }
-                Some(OpCode::True) => {
-                    self.push(Value::Bool(true));
-                }
-                Some(OpCode::False) => {
-                    self.push(Value::Bool(false));
                 }
                 Some(OpCode::Pop) => {
                     self.pop();
@@ -129,7 +129,7 @@ impl VM {
                                         "Attempted to get unknown variable {:?}",
                                         name
                                     ),
-                                    line: self.chunk.lines[self.ip - 2],
+                                    span: self.chunk.spans[self.ip - 2],
                                 })
                             }
                         };
@@ -150,7 +150,7 @@ impl VM {
                                         "Attempted to get unknown variable {:?}",
                                         name
                                     ),
-                                    line: self.chunk.lines[self.ip - 3],
+                                    span: self.chunk.spans[self.ip - 3],
                                 })
                             }
                         };
@@ -168,7 +168,7 @@ impl VM {
                         } else {
                             return Err(RuntimeError {
                                 message: format!("Assigned to undeclared global {:?}", name),
-                                line: self.chunk.lines[self.ip - 2],
+                                span: self.chunk.spans[self.ip - 2],
                             });
                         }
                     } else {
@@ -184,7 +184,7 @@ impl VM {
                         } else {
                             return Err(RuntimeError {
                                 message: format!("Assigned to undeclared global {:?}", name),
-                                line: self.chunk.lines[self.ip - 3],
+                                span: self.chunk.spans[self.ip - 3],
                             });
                         }
                     } else {
@@ -222,7 +222,7 @@ impl VM {
                             "Unrecognized bytecode {} at offset {}",
                             self.chunk[self.ip], self.ip
                         )),
-                        line: self.chunk.lines[self.ip],
+                        span: self.chunk.spans[self.ip],
                     })
                 }
             }
@@ -247,7 +247,7 @@ impl VM {
                 if !left.is_number() || !right.is_number() {
                     return Err(RuntimeError {
                         message: format!("Cannot apply {:?} to non-numeric types", op),
-                        line: self.chunk.lines[self.ip - 1],
+                        span: self.chunk.spans[self.ip - 1],
                     });
                 }
             }
@@ -257,7 +257,7 @@ impl VM {
                     _ => {
                         return Err(RuntimeError {
                             message: String::from("Cannot apply '+' to Number and Non-Number"),
-                            line: self.chunk.lines[self.ip - 1],
+                            span: self.chunk.spans[self.ip - 1],
                         });
                     }
                 },
@@ -266,14 +266,14 @@ impl VM {
                     _ => {
                         return Err(RuntimeError {
                             message: String::from("Cannot apply '+' to String and Non-String"),
-                            line: self.chunk.lines[self.ip - 1],
+                            span: self.chunk.spans[self.ip - 1],
                         });
                     }
                 },
                 _ => {
                     return Err(RuntimeError {
                         message: String::from("Cannot apply '+' to non-numeric or non-string type"),
-                        line: self.chunk.lines[self.ip - 1],
+                        span: self.chunk.spans[self.ip - 1],
                     });
                 }
             },
