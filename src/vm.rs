@@ -4,6 +4,8 @@ use crate::object::Obj;
 use crate::token::Span;
 use crate::value::Value;
 
+use num_derive::FromPrimitive;
+use num_derive::ToPrimitive;
 use num_traits::FromPrimitive;
 use std::collections::{HashMap, VecDeque};
 

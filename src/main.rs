@@ -1,27 +1,16 @@
-mod ast;
-mod compiler;
-mod error;
-mod executable;
-mod object;
-mod parser;
-mod scanner;
-mod token;
-mod value;
-mod vm;
+extern crate rlox;
 
-#[macro_use]
-extern crate num_derive;
-
-use compiler::Compiler;
-use parser::Parser;
+use rlox::compiler::Compiler;
+use rlox::error::ErrorHandler;
+use rlox::parser::Parser;
+use rlox::vm::VM;
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use vm::VM;
 
 fn run(source: String, vm: &mut VM) {
     // Parse
-    let handler = error::ErrorHandler::new(source.clone());
+    let handler = ErrorHandler::new(source.clone());
     let mut parser = Parser::new(source.clone(), handler);
     let ast = parser.parse_program();
     if parser.had_error {
@@ -39,7 +28,7 @@ fn run(source: String, vm: &mut VM) {
     if cfg!(feature = "disassemble") {
         println!("Interpreting: ");
     }
-    vm.interpret(binary, &error::ErrorHandler::new(source));
+    vm.interpret(binary, &ErrorHandler::new(source));
 }
 
 fn run_file(filename: &str) {
