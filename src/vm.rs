@@ -52,7 +52,7 @@ impl Into<u8> for OpCode {
 #[derive(Debug)]
 pub struct VM {
     ip: usize,
-    chunk: Executable,
+    bin: Executable,
     stack: VecDeque<Value>,
     globals: HashMap<String, Value>,
 }
@@ -67,7 +67,7 @@ impl VM {
     pub fn new() -> Self {
         VM {
             ip: 0,
-            chunk: Executable::new(String::new()),
+            bin: Executable::new(String::new()),
             stack: VecDeque::new(),
             globals: HashMap::new(),
         }
@@ -75,26 +75,26 @@ impl VM {
 
     pub fn interpret<W: Write>(
         &mut self,
-        chunk: Executable,
+        bin: Executable,
         output_stream: &mut W,
     ) -> Result<(), RuntimeError> {
         self.ip = 0;
-        self.chunk = chunk;
+        self.bin = bin;
 
         loop {
             if cfg!(disassemble) {
-                self.chunk.disassemble_instruction(self.ip);
+                self.bin.disassemble_instruction(self.ip);
             }
 
             let op = FromPrimitive::from_u8(self.read_byte());
             match op {
                 Some(OpCode::Constant) => {
                     let index = self.read_byte() as u16;
-                    self.push(self.chunk.get_constant(index).clone());
+                    self.push(self.bin.get_constant(index).clone());
                 }
                 Some(OpCode::LongConstant) => {
                     let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
-                    self.push(self.chunk.get_constant(index).clone());
+                    self.push(self.bin.get_constant(index).clone());
                 }
                 Some(OpCode::Negate) => {
                     if self.peek(0).is_number() {
@@ -104,7 +104,7 @@ impl VM {
                     } else {
                         return Err(RuntimeError {
                             message: String::from("Cannot negate non-numeric types"),
-                            span: self.chunk.spans[self.ip - 1],
+                            span: self.bin.spans[self.ip - 1],
                         });
                     }
                 }
@@ -136,7 +136,7 @@ impl VM {
                 }
                 Some(OpCode::GetGlobal) => {
                     let index = self.read_byte() as u16;
-                    let name_arg = self.chunk.get_constant(index).clone();
+                    let name_arg = self.bin.get_constant(index).clone();
                     if let Value::Obj(Obj::String(name)) = name_arg {
                         let var_value = match self.globals.get(&*name) {
                             Some(value) => value.clone(),
@@ -146,7 +146,7 @@ impl VM {
                                         "Attempted to get unknown variable {:?}",
                                         name
                                     ),
-                                    span: self.chunk.spans[self.ip - 2],
+                                    span: self.bin.spans[self.ip - 2],
                                 })
                             }
                         };
@@ -157,7 +157,7 @@ impl VM {
                 }
                 Some(OpCode::GetLongGlobal) => {
                     let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
-                    let name_arg = self.chunk.get_constant(index).clone();
+                    let name_arg = self.bin.get_constant(index).clone();
                     if let Value::Obj(Obj::String(name)) = name_arg {
                         let var_value = match self.globals.get(&*name) {
                             Some(value) => value.clone(),
@@ -167,7 +167,7 @@ impl VM {
                                         "Attempted to get unknown variable {:?}",
                                         name
                                     ),
-                                    span: self.chunk.spans[self.ip - 3],
+                                    span: self.bin.spans[self.ip - 3],
                                 })
                             }
                         };
@@ -178,14 +178,14 @@ impl VM {
                 }
                 Some(OpCode::SetGlobal) => {
                     let index = self.read_byte() as u16;
-                    if let Value::Obj(Obj::String(name)) = self.chunk.get_constant(index).clone() {
+                    if let Value::Obj(Obj::String(name)) = self.bin.get_constant(index).clone() {
                         if self.globals.contains_key(&*name) {
                             self.globals
                                 .insert(name.clone().to_string(), self.peek(0).clone());
                         } else {
                             return Err(RuntimeError {
                                 message: format!("Assigned to undeclared global {:?}", name),
-                                span: self.chunk.spans[self.ip - 2],
+                                span: self.bin.spans[self.ip - 2],
                             });
                         }
                     } else {
@@ -194,14 +194,14 @@ impl VM {
                 }
                 Some(OpCode::SetLongGlobal) => {
                     let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
-                    if let Value::Obj(Obj::String(name)) = self.chunk.get_constant(index).clone() {
+                    if let Value::Obj(Obj::String(name)) = self.bin.get_constant(index).clone() {
                         if self.globals.contains_key(&*name) {
                             self.globals
                                 .insert(name.clone().to_string(), self.peek(0).clone());
                         } else {
                             return Err(RuntimeError {
                                 message: format!("Assigned to undeclared global {:?}", name),
-                                span: self.chunk.spans[self.ip - 3],
+                                span: self.bin.spans[self.ip - 3],
                             });
                         }
                     } else {
@@ -213,7 +213,7 @@ impl VM {
                 }
                 Some(OpCode::DeclareGlobal) => {
                     let index = self.read_byte() as u16;
-                    if let Value::Obj(Obj::String(name)) = self.chunk.get_constant(index).clone() {
+                    if let Value::Obj(Obj::String(name)) = self.bin.get_constant(index).clone() {
                         self.globals.insert(name.clone().to_string(), Value::Nil);
                     } else {
                         panic!(
@@ -224,7 +224,7 @@ impl VM {
                 }
                 Some(OpCode::DeclareLongGlobal) => {
                     let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
-                    if let Value::Obj(Obj::String(name)) = self.chunk.get_constant(index).clone() {
+                    if let Value::Obj(Obj::String(name)) = self.bin.get_constant(index).clone() {
                         self.globals.insert(name.clone().to_string(), Value::Nil);
                     } else {
                         panic!(
@@ -237,9 +237,9 @@ impl VM {
                     return Err(RuntimeError {
                         message: format!(
                             "Unrecognized bytecode {} at offset {}",
-                            self.chunk[self.ip], self.ip
+                            self.bin[self.ip], self.ip
                         ),
-                        span: self.chunk.spans[self.ip],
+                        span: self.bin.spans[self.ip],
                     })
                 }
             }
@@ -267,7 +267,7 @@ impl VM {
                 if !left.is_number() || !right.is_number() {
                     return Err(RuntimeError {
                         message: format!("Cannot apply {:?} to non-numeric types", op),
-                        span: self.chunk.spans[self.ip - 1],
+                        span: self.bin.spans[self.ip - 1],
                     });
                 }
             }
@@ -277,7 +277,7 @@ impl VM {
                     _ => {
                         return Err(RuntimeError {
                             message: String::from("Cannot apply '+' to Number and Non-Number"),
-                            span: self.chunk.spans[self.ip - 1],
+                            span: self.bin.spans[self.ip - 1],
                         });
                     }
                 },
@@ -286,14 +286,14 @@ impl VM {
                     _ => {
                         return Err(RuntimeError {
                             message: String::from("Cannot apply '+' to String and Non-String"),
-                            span: self.chunk.spans[self.ip - 1],
+                            span: self.bin.spans[self.ip - 1],
                         });
                     }
                 },
                 _ => {
                     return Err(RuntimeError {
                         message: String::from("Cannot apply '+' to non-numeric or non-string type"),
-                        span: self.chunk.spans[self.ip - 1],
+                        span: self.bin.spans[self.ip - 1],
                     });
                 }
             },
@@ -319,14 +319,14 @@ impl VM {
     }
 
     fn read_byte(&mut self) -> u8 {
-        if self.ip >= self.chunk.len() {
+        if self.ip >= self.bin.len() {
             panic!(
-                "read_byte out of bounds. chunk: {}, ip: {}",
-                self.chunk.name, self.ip
+                "read_byte out of bounds. bin: {}, ip: {}",
+                self.bin.name, self.ip
             );
         }
         self.ip += 1;
-        self.chunk[self.ip - 1]
+        self.bin[self.ip - 1]
     }
 
     fn push(&mut self, value: Value) {

@@ -13,65 +13,59 @@ impl Compiler {
         Compiler {}
     }
     pub fn compile(&mut self, program: Vec<AstNode>) -> Executable {
-        let mut chunk = Executable::new(String::from("script"));
+        let mut bin = Executable::new(String::from("script"));
         for node in program {
-            self.compile_statement(&mut chunk, node.statement());
+            self.compile_statement(&mut bin, &node);
         }
 
-        chunk.push_opcode(
+        bin.push_opcode(
             OpCode::Return,
-            *chunk.spans.last().unwrap_or(&Span::new(0, 0)),
+            *bin.spans.last().unwrap_or(&Span::new(0, 0)),
         );
-        chunk
+        bin
     }
 
-    fn compile_statement(&mut self, chunk: &mut Executable, statement: &Statement) {
-        match statement {
+    fn compile_statement(&mut self, bin: &mut Executable, statement_node: &AstNode) {
+        match statement_node.statement() {
             Statement::Expression { expression } => {
-                self.compile_expression(chunk, expression.expression());
-                chunk.push_opcode(OpCode::Pop, expression.span);
+                self.compile_expression(bin, expression);
+                bin.push_opcode(OpCode::Pop, expression.span);
             }
-            Statement::Print {
-                keyword,
-                expression,
-                ..
-            } => {
-                self.compile_expression(chunk, expression.expression());
-                chunk.push_opcode(OpCode::Print, keyword.span);
+            Statement::Print { expression, .. } => {
+                self.compile_expression(bin, expression);
+                bin.push_opcode(OpCode::Print, statement_node.span);
             }
             Statement::Declaration {
-                name,
-                operator,
-                initializer,
+                name, initializer, ..
             } => {
                 let name_value = Value::Obj(Obj::from(name.string.clone()));
-                chunk.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), name.span);
+                bin.push_constant_inst(
+                    OpCode::DeclareGlobal,
+                    name_value.clone(),
+                    statement_node.span,
+                );
                 if let Some(init_expression) = initializer {
-                    self.compile_expression(chunk, init_expression.expression());
-                    chunk.push_constant_inst(
-                        OpCode::SetGlobal,
-                        name_value,
-                        operator.as_ref().unwrap().span,
-                    );
-                    chunk.push_opcode(OpCode::Pop, operator.as_ref().unwrap().span)
+                    self.compile_expression(bin, init_expression);
+                    bin.push_constant_inst(OpCode::SetGlobal, name_value, statement_node.span);
+                    bin.push_opcode(OpCode::Pop, statement_node.span)
                 }
             }
         }
     }
 
-    fn compile_expression(&mut self, chunk: &mut Executable, expression: &Expression) {
-        match expression {
+    fn compile_expression(&mut self, bin: &mut Executable, expression_node: &AstNode) {
+        match expression_node.expression() {
             Expression::Constant { value, literal } => {
-                chunk.push_constant_inst(OpCode::Constant, value.clone(), literal.span);
+                bin.push_constant_inst(OpCode::Constant, value.clone(), literal.span);
             }
             Expression::Unary {
                 operator,
                 expression,
             } => {
-                self.compile_expression(chunk, expression.expression());
+                self.compile_expression(bin, expression);
                 match operator.kind {
-                    Kind::Minus => chunk.push_opcode(OpCode::Negate, operator.span),
-                    Kind::Bang => chunk.push_opcode(OpCode::Not, operator.span),
+                    Kind::Minus => bin.push_opcode(OpCode::Negate, expression_node.span),
+                    Kind::Bang => bin.push_opcode(OpCode::Not, expression_node.span),
                     _ => panic!("Invalid unary operator {:?}", operator),
                 }
             }
@@ -80,41 +74,39 @@ impl Compiler {
                 operator,
                 right,
             } => {
-                self.compile_expression(chunk, left.expression());
-                self.compile_expression(chunk, right.expression());
+                self.compile_expression(bin, left);
+                self.compile_expression(bin, right);
                 match operator.kind {
-                    Kind::Plus => chunk.push_opcode(OpCode::Add, operator.span),
-                    Kind::Minus => chunk.push_opcode(OpCode::Subtract, operator.span),
-                    Kind::Star => chunk.push_opcode(OpCode::Multiply, operator.span),
-                    Kind::Slash => chunk.push_opcode(OpCode::Divide, operator.span),
-                    Kind::Less => chunk.push_opcode(OpCode::Less, operator.span),
-                    Kind::LessEqual => chunk.push_opcode(OpCode::LessEqual, operator.span),
-                    Kind::Greater => chunk.push_opcode(OpCode::Greater, operator.span),
-                    Kind::GreaterEqual => chunk.push_opcode(OpCode::GreaterEqual, operator.span),
-                    Kind::EqualEqual => chunk.push_opcode(OpCode::Equal, operator.span),
+                    Kind::Plus => bin.push_opcode(OpCode::Add, expression_node.span),
+                    Kind::Minus => bin.push_opcode(OpCode::Subtract, expression_node.span),
+                    Kind::Star => bin.push_opcode(OpCode::Multiply, expression_node.span),
+                    Kind::Slash => bin.push_opcode(OpCode::Divide, expression_node.span),
+                    Kind::Less => bin.push_opcode(OpCode::Less, expression_node.span),
+                    Kind::LessEqual => bin.push_opcode(OpCode::LessEqual, expression_node.span),
+                    Kind::Greater => bin.push_opcode(OpCode::Greater, expression_node.span),
+                    Kind::GreaterEqual => {
+                        bin.push_opcode(OpCode::GreaterEqual, expression_node.span)
+                    }
+                    Kind::EqualEqual => bin.push_opcode(OpCode::Equal, expression_node.span),
                     Kind::BangEqual => {
-                        chunk.push_opcode(OpCode::Equal, operator.span);
-                        chunk.push_opcode(OpCode::Not, operator.span);
+                        bin.push_opcode(OpCode::Equal, expression_node.span);
+                        bin.push_opcode(OpCode::Not, expression_node.span);
                     }
                     _ => panic!("Invalid binary operator {:?}", operator),
                 }
             }
-            Expression::Assignment {
-                lvalue,
-                operator,
-                rvalue,
-            } => {
+            Expression::Assignment { lvalue, rvalue, .. } => {
                 if let Expression::Variable { name } = lvalue.expression() {
-                    self.compile_expression(chunk, rvalue.expression());
+                    self.compile_expression(bin, rvalue);
                     let name_value = Value::Obj(Obj::from(name.string.clone()));
-                    chunk.push_constant_inst(OpCode::SetGlobal, name_value, operator.span);
+                    bin.push_constant_inst(OpCode::SetGlobal, name_value, expression_node.span);
                 } else {
                     panic!("Assignment to non-lvalue {:?}", lvalue);
                 }
             }
             Expression::Variable { name } => {
                 let name_value = Value::Obj(Obj::from(name.string.clone()));
-                chunk.push_constant_inst(OpCode::GetGlobal, name_value, name.span);
+                bin.push_constant_inst(OpCode::GetGlobal, name_value, name.span);
             }
         }
     }

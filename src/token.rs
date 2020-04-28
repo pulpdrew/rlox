@@ -70,7 +70,7 @@ impl Span {
         let mut end = 0;
         for span in spans {
             start = cmp::min(start, span.start);
-            end = cmp::min(end, span.end);
+            end = cmp::max(end, span.end);
         }
         Span::new(start, end)
     }
