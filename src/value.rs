@@ -4,7 +4,6 @@ use std::fmt;
 use std::ops;
 use std::rc::Rc;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum Value {
     Number(f64),
@@ -13,7 +12,6 @@ pub enum Value {
     Obj(Obj),
 }
 
-#[allow(dead_code)]
 impl Value {
     pub fn is_number(&self) -> bool {
         if let Value::Number(..) = self {

@@ -16,7 +16,6 @@ pub struct Parser<'a, W: Write> {
     handler: &'a ErrorHandler<'a, W>,
 }
 
-#[allow(dead_code)]
 impl<'a, W: Write> Parser<'a, W> {
     pub fn new(source: String, handler: &'a ErrorHandler<'a, W>) -> Self {
         let mut scanner = Scanner::new(source);

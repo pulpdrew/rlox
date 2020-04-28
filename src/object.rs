@@ -2,7 +2,6 @@ use std::fmt;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum Obj {
     String(Rc<String>),
 }
