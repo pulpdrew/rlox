@@ -14,3 +14,15 @@ impl fmt::Display for Obj {
         }
     }
 }
+
+impl From<String> for Obj {
+    fn from(string: String) -> Self {
+        Obj::String(Rc::new(string))
+    }
+}
+
+impl From<&str> for Obj {
+    fn from(string: &str) -> Self {
+        Obj::String(Rc::new(String::from(string)))
+    }
+}

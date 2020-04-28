@@ -4,7 +4,6 @@ use crate::object::Obj;
 use crate::token::{Kind, Span};
 use crate::value::Value;
 use crate::vm::OpCode;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Compiler {}
@@ -45,7 +44,7 @@ impl Compiler {
                 operator,
                 initializer,
             } => {
-                let name_value = Value::Obj(Obj::String(Rc::new(name.string.clone())));
+                let name_value = Value::Obj(Obj::from(name.string.clone()));
                 chunk.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), name.span);
                 if let Some(init_expression) = initializer {
                     self.compile_expression(chunk, init_expression.expression());
@@ -107,14 +106,14 @@ impl Compiler {
             } => {
                 if let Expression::Variable { name } = lvalue.expression() {
                     self.compile_expression(chunk, rvalue.expression());
-                    let name_value = Value::Obj(Obj::String(Rc::new(name.string.clone())));
+                    let name_value = Value::Obj(Obj::from(name.string.clone()));
                     chunk.push_constant_inst(OpCode::SetGlobal, name_value, operator.span);
                 } else {
                     panic!("Assignment to non-lvalue {:?}", lvalue);
                 }
             }
             Expression::Variable { name } => {
-                let name_value = Value::Obj(Obj::String(Rc::new(name.string.clone())));
+                let name_value = Value::Obj(Obj::from(name.string.clone()));
                 chunk.push_constant_inst(OpCode::GetGlobal, name_value, name.span);
             }
         }

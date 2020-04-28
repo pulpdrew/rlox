@@ -4,7 +4,6 @@ use crate::object::Obj;
 use crate::scanner::Scanner;
 use crate::token::{Kind, Span, Token};
 use crate::value::Value;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Parser {
@@ -368,9 +367,7 @@ impl Parser {
     fn string(&mut self) -> AstNode {
         let literal = self.advance();
         let span = literal.span;
-        let value = Value::Obj(Obj::String(Rc::new(String::from(
-            &literal.string[1..literal.string.len() - 1],
-        ))));
+        let value = Value::Obj(Obj::from(&literal.string[1..literal.string.len() - 1]));
 
         AstNode::from_expression(Expression::Constant { literal, value }, span)
     }

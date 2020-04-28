@@ -183,3 +183,15 @@ impl fmt::Display for Value {
         }
     }
 }
+
+impl From<f64> for Value {
+    fn from(number: f64) -> Self {
+        Value::Number(number)
+    }
+}
+
+impl From<bool> for Value {
+    fn from(b: bool) -> Self {
+        Value::Bool(b)
+    }
+}
