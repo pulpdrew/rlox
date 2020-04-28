@@ -4,20 +4,21 @@ use crate::object::Obj;
 use crate::scanner::Scanner;
 use crate::token::{Kind, Span, Token};
 use crate::value::Value;
+use std::io::Write;
 
 #[derive(Debug)]
-pub struct Parser {
+pub struct Parser<'a, W: Write> {
     scanner: Scanner,
     current: Token,
     next: Token,
     pub had_error: bool,
     pub panic_mode: bool,
-    handler: ErrorHandler,
+    handler: &'a ErrorHandler<'a, W>,
 }
 
 #[allow(dead_code)]
-impl Parser {
-    pub fn new(source: String, handler: ErrorHandler) -> Self {
+impl<'a, W: Write> Parser<'a, W> {
+    pub fn new(source: String, handler: &'a ErrorHandler<'a, W>) -> Self {
         let mut scanner = Scanner::new(source);
         let current = scanner.next();
         let next = scanner.next();
@@ -284,12 +285,12 @@ impl Parser {
     fn primary(&mut self) -> AstNode {
         match self.current.kind {
             Kind::LeftParen => {
-                self.advance();
+                let lparen = self.advance();
                 let expression = self.expression();
                 match self.eat(Kind::RightParen, "Expected ')' after expression.") {
-                    Ok(_) => {
+                    Ok(rparen) => {
                         let new_span =
-                            Span::new(expression.span.start - 1, expression.span.end + 1);
+                            Span::merge(vec![&lparen.span, &expression.span, &rparen.span]);
                         AstNode::new_ast_node(expression, new_span)
                     }
                     Err(()) => AstNode::none(),

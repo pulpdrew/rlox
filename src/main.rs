@@ -9,9 +9,11 @@ use std::fs;
 use std::io::{self, Write};
 
 fn run(source: String, vm: &mut VM) {
+    let mut stderr = std::io::stderr();
+
     // Parse
-    let handler = ErrorHandler::new(source.clone());
-    let mut parser = Parser::new(source.clone(), handler);
+    let handler = ErrorHandler::new(source.clone(), &mut stderr);
+    let mut parser = Parser::new(source.clone(), &handler);
     let ast = parser.parse_program();
     if parser.had_error {
         return;
@@ -25,10 +27,13 @@ fn run(source: String, vm: &mut VM) {
     }
 
     // Execute
-    if cfg!(feature = "disassemble") {
-        println!("Interpreting: ");
+    let handler = ErrorHandler::new(source, &mut stderr);
+    match vm.interpret(binary, &mut std::io::stdout()) {
+        Ok(_) => {}
+        Err(e) => {
+            handler.error(&e.span, &e.message);
+        }
     }
-    vm.interpret(binary, &ErrorHandler::new(source));
 }
 
 fn run_file(filename: &str) {

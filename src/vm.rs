@@ -1,4 +1,3 @@
-use crate::error::ErrorHandler;
 use crate::executable::Executable;
 use crate::object::Obj;
 use crate::token::Span;
@@ -7,7 +6,9 @@ use crate::value::Value;
 use num_derive::FromPrimitive;
 use num_derive::ToPrimitive;
 use num_traits::FromPrimitive;
+use num_traits::ToPrimitive;
 use std::collections::{HashMap, VecDeque};
+use std::io::Write;
 
 #[derive(Debug, FromPrimitive, ToPrimitive)]
 pub enum OpCode {
@@ -35,6 +36,19 @@ pub enum OpCode {
     SetLongGlobal,
 }
 
+impl From<u8> for OpCode {
+    fn from(byte: u8) -> Self {
+        FromPrimitive::from_u8(byte)
+            .unwrap_or_else(|| panic!("failed to convert {} into OpCode", byte))
+    }
+}
+
+impl Into<u8> for OpCode {
+    fn into(self) -> u8 {
+        ToPrimitive::to_u8(&self).unwrap_or_else(|| panic!("failed to convert {:?} into u8", self))
+    }
+}
+
 #[derive(Debug)]
 pub struct VM {
     ip: usize,
@@ -53,25 +67,20 @@ impl VM {
     pub fn new() -> Self {
         VM {
             ip: 0,
-            chunk: Executable::new(String::from("dummy chunk")),
+            chunk: Executable::new(String::new()),
             stack: VecDeque::new(),
             globals: HashMap::new(),
         }
     }
 
-    pub fn interpret(&mut self, chunk: Executable, handler: &ErrorHandler) {
+    pub fn interpret<W: Write>(
+        &mut self,
+        chunk: Executable,
+        output_stream: &mut W,
+    ) -> Result<(), RuntimeError> {
         self.ip = 0;
         self.chunk = chunk;
 
-        match self.run() {
-            Ok(()) => {}
-            Err(e) => {
-                handler.error(&e.span, e.message.as_str());
-            }
-        }
-    }
-
-    fn run(&mut self) -> Result<(), RuntimeError> {
         loop {
             if cfg!(disassemble) {
                 self.chunk.disassemble_instruction(self.ip);
@@ -121,7 +130,10 @@ impl VM {
                     Ok(()) => {}
                     Err(e) => return Err(e),
                 },
-                Some(OpCode::Print) => println!("{:}", self.pop()),
+                Some(OpCode::Print) => {
+                    writeln!(output_stream, "{:}", self.pop()).unwrap();
+                    output_stream.flush().unwrap();
+                }
                 Some(OpCode::GetGlobal) => {
                     let index = self.read_byte() as u16;
                     let name_arg = self.chunk.get_constant(index).clone();
@@ -232,9 +244,9 @@ impl VM {
                 }
             }
             if cfg!(feature = "disassemble") {
-                self.print_stack();
-                println!(" Globals: {:?}", self.globals);
-                println!();
+                self.print_stack(output_stream);
+                writeln!(output_stream, " Globals: {:?}", self.globals).unwrap();
+                writeln!(output_stream).unwrap();
             }
         }
     }
@@ -329,11 +341,11 @@ impl VM {
         &self.stack[self.stack.len() - distance - 1]
     }
 
-    fn print_stack(&self) {
-        print!(" Stack: ");
+    fn print_stack<W: Write>(&self, output_stream: &mut W) {
+        write!(output_stream, " Stack: ").unwrap();
         for v in &self.stack {
-            print!("[{:?}] ", v)
+            write!(output_stream, "[{:?}] ", v).unwrap();
         }
-        println!();
+        writeln!(output_stream).unwrap();
     }
 }

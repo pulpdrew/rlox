@@ -1,14 +1,19 @@
 use crate::token::Span;
 use std::cmp;
+use std::io::Write;
 
 #[derive(Debug)]
-pub struct ErrorHandler {
+pub struct ErrorHandler<'a, W: Write> {
     source: String,
+    error_stream: &'a mut W,
 }
 
-impl ErrorHandler {
-    pub fn new(source: String) -> Self {
-        ErrorHandler { source }
+impl<'a, W: Write> ErrorHandler<'a, W> {
+    pub fn new(source: String, error_stream: &'a mut W) -> Self {
+        ErrorHandler {
+            source,
+            error_stream,
+        }
     }
 
     pub fn error(&self, span: &Span, message: &str) {
