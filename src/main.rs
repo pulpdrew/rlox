@@ -19,7 +19,7 @@ use std::fs;
 use std::io::{self, Write};
 use vm::VM;
 
-fn run(source: String) {
+fn run(source: String, vm: &mut VM) {
     // Parse
     let handler = error::ErrorHandler::new(source.clone());
     let mut parser = Parser::new(source.clone(), handler);
@@ -35,18 +35,19 @@ fn run(source: String) {
 
     // Execute
     println!("Interpreting: ");
-    let mut vm = VM::new();
     vm.interpret(binary, &error::ErrorHandler::new(source));
 }
 
 fn run_file(filename: &str) {
     let source = fs::read_to_string(&filename)
         .unwrap_or_else(|_| panic!("Failed to read source file {}", filename));
-    run(source);
+    let mut vm = VM::new();
+    run(source, &mut vm);
 }
 
 fn repl() {
     let stdin = io::stdin();
+    let mut vm = VM::new();
     loop {
         print!("> ");
         io::stdout().flush().expect("Failed to flush to output.");
@@ -56,7 +57,7 @@ fn repl() {
             match stdin.read_line(&mut source) {
                 Ok(count) => {
                     if count <= 1 {
-                        run(String::from(source.trim_end()));
+                        run(String::from(source.trim_end()), &mut vm);
                         break;
                     }
                 }

@@ -58,6 +58,7 @@ impl VM {
     }
 
     pub fn interpret(&mut self, chunk: Executable, handler: &ErrorHandler) {
+        self.ip = 0;
         self.chunk = chunk;
 
         match self.run() {
@@ -227,7 +228,8 @@ impl VM {
                 }
             }
             self.print_stack();
-            println!("globals: {:?}", self.globals);
+            println!(" Globals: {:?}", self.globals);
+            println!();
         }
     }
 
@@ -322,11 +324,10 @@ impl VM {
     }
 
     fn print_stack(&self) {
-        print!("Stack: ");
+        print!(" Stack: ");
         for v in &self.stack {
             print!("[{:?}] ", v)
         }
-        println!();
         println!();
     }
 }

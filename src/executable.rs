@@ -79,8 +79,8 @@ impl Executable {
     pub fn dump(&self) {
         println!();
         println!("(Dumping: {})", self.name);
-        println!("Index  Line   OpCode             Arguments");
-        println!("-------------------------------------------");
+        println!("Index  OpCode              Arguments");
+        println!("------------------------------------");
         let mut offset = 0;
         while offset < self.code.len() {
             offset = self.disassemble_instruction(offset);
@@ -92,11 +92,6 @@ impl Executable {
     /// and print the result
     pub fn disassemble_instruction(&self, offset: usize) -> usize {
         print!("{:0>5}  ", offset);
-        if offset == 0 || self.spans[offset] != self.spans[offset - 1] {
-            print!("{:0>5?}  ", self.spans[offset]);
-        } else {
-            print!("    |  ");
-        }
         match FromPrimitive::from_u8(self[offset]) {
             Some(OpCode::Constant) => self.constant_instruction("Constant", offset),
             Some(OpCode::LongConstant) => self.long_constant_instruction("LongConstant", offset),
