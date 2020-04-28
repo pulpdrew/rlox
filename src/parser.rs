@@ -64,7 +64,7 @@ impl Parser {
                 &operator.span,
                 &initializer.span,
             ]);
-            AstNode::from_statement(
+            AstNode::new_statement(
                 Statement::Declaration {
                     name,
                     operator: Some(operator),
@@ -74,7 +74,7 @@ impl Parser {
             )
         } else {
             let span = Span::merge(vec![&keyword.span, &name.span]);
-            AstNode::from_statement(
+            AstNode::new_statement(
                 Statement::Declaration {
                     name,
                     operator: None,
@@ -87,7 +87,7 @@ impl Parser {
         match self.eat(Kind::Semicolon, "Expected ';' after initializer.") {
             Ok(semi) => {
                 let span = Span::merge(vec![&node.span, &semi.span]);
-                AstNode::from_ast_node(node, span)
+                AstNode::new_ast_node(node, span)
             }
             Err(_) => {
                 self.synchronize();
@@ -104,7 +104,7 @@ impl Parser {
                 match self.eat(Kind::Semicolon, "Expected ';' after expression") {
                     Ok(semi) => {
                         let new_span = Span::merge(vec![&expression.span, &semi.span]);
-                        AstNode::from_statement(
+                        AstNode::new_statement(
                             Statement::Expression {
                                 expression: Box::new(expression),
                             },
@@ -128,7 +128,7 @@ impl Parser {
         match self.eat(Kind::Semicolon, "Expected ';' after print expression") {
             Ok(semi) => {
                 let new_span = Span::merge(vec![&keyword.span, &expression.span, &semi.span]);
-                AstNode::from_statement(
+                AstNode::new_statement(
                     Statement::Print {
                         keyword,
                         expression: Box::new(expression),
@@ -155,7 +155,7 @@ impl Parser {
             let rvalue = self.assignment();
             let new_span = Span::merge(vec![&node.span, &operator.span, &rvalue.span]);
 
-            AstNode::from_expression(
+            AstNode::new_expression(
                 Expression::Assignment {
                     lvalue: Box::new(node),
                     operator,
@@ -178,48 +178,40 @@ impl Parser {
 
     fn equality(&mut self) -> AstNode {
         let mut node = self.comparison();
-        loop {
-            match self.current.kind {
-                Kind::EqualEqual | Kind::BangEqual => {
-                    let operator = self.advance();
-                    let right = self.comparison();
-                    let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
+        while let Kind::EqualEqual | Kind::BangEqual = self.current.kind {
+            let operator = self.advance();
+            let right = self.comparison();
+            let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
 
-                    node = AstNode::from_expression(
-                        Expression::Binary {
-                            left: Box::new(node),
-                            operator,
-                            right: Box::new(right),
-                        },
-                        new_span,
-                    );
-                }
-                _ => break,
-            }
+            node = AstNode::new_expression(
+                Expression::Binary {
+                    left: Box::new(node),
+                    operator,
+                    right: Box::new(right),
+                },
+                new_span,
+            );
         }
         node
     }
 
     fn comparison(&mut self) -> AstNode {
         let mut node = self.addition();
-        loop {
-            match self.current.kind {
-                Kind::Less | Kind::LessEqual | Kind::Greater | Kind::GreaterEqual => {
-                    let operator = self.advance();
-                    let right = self.addition();
-                    let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
+        while let Kind::Less | Kind::LessEqual | Kind::Greater | Kind::GreaterEqual =
+            self.current.kind
+        {
+            let operator = self.advance();
+            let right = self.addition();
+            let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
 
-                    node = AstNode::from_expression(
-                        Expression::Binary {
-                            left: Box::new(node),
-                            operator,
-                            right: Box::new(right),
-                        },
-                        new_span,
-                    );
-                }
-                _ => break,
-            }
+            node = AstNode::new_expression(
+                Expression::Binary {
+                    left: Box::new(node),
+                    operator,
+                    right: Box::new(right),
+                },
+                new_span,
+            );
         }
         node
     }
@@ -232,7 +224,7 @@ impl Parser {
             let right = self.multiplication();
             let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
 
-            node = AstNode::from_expression(
+            node = AstNode::new_expression(
                 Expression::Binary {
                     left: Box::new(node),
                     operator,
@@ -253,7 +245,7 @@ impl Parser {
             let right = self.unary();
             let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
 
-            node = AstNode::from_expression(
+            node = AstNode::new_expression(
                 Expression::Binary {
                     left: Box::new(node),
                     operator,
@@ -273,7 +265,7 @@ impl Parser {
                 let expression = self.unary();
                 let new_span = Span::new(expression.span.start - 1, expression.span.end);
 
-                AstNode::from_expression(
+                AstNode::new_expression(
                     Expression::Unary {
                         operator: operator,
                         expression: Box::new(expression),
@@ -298,7 +290,7 @@ impl Parser {
                     Ok(_) => {
                         let new_span =
                             Span::new(expression.span.start - 1, expression.span.end + 1);
-                        AstNode::from_ast_node(expression, new_span)
+                        AstNode::new_ast_node(expression, new_span)
                     }
                     Err(()) => AstNode::none(),
                 }
@@ -306,14 +298,14 @@ impl Parser {
             Kind::IdentifierLiteral => {
                 let literal = self.advance();
                 let span = literal.span;
-                AstNode::from_expression(Expression::Variable { name: literal }, span)
+                AstNode::new_expression(Expression::Variable { name: literal }, span)
             }
             Kind::NumberLiteral => self.number(),
             Kind::StringLiteral => self.string(),
             Kind::True => {
                 let literal = self.advance();
                 let span = literal.span;
-                AstNode::from_expression(
+                AstNode::new_expression(
                     Expression::Constant {
                         value: Value::Bool(true),
                         literal,
@@ -324,7 +316,7 @@ impl Parser {
             Kind::False => {
                 let literal = self.advance();
                 let span = literal.span;
-                AstNode::from_expression(
+                AstNode::new_expression(
                     Expression::Constant {
                         value: Value::Bool(false),
                         literal,
@@ -335,7 +327,7 @@ impl Parser {
             Kind::Nil => {
                 let literal = self.advance();
                 let span = literal.span;
-                AstNode::from_expression(
+                AstNode::new_expression(
                     Expression::Constant {
                         value: Value::Nil,
                         literal,
@@ -358,10 +350,10 @@ impl Parser {
             literal
                 .string
                 .parse()
-                .expect(format!("Failed to parse '{}' as f64", literal.string).as_str()),
+                .unwrap_or_else(|_| panic!("Failed to parse '{}' as f64", literal.string)),
         );
 
-        AstNode::from_expression(Expression::Constant { literal, value }, span)
+        AstNode::new_expression(Expression::Constant { literal, value }, span)
     }
 
     fn string(&mut self) -> AstNode {
@@ -369,7 +361,7 @@ impl Parser {
         let span = literal.span;
         let value = Value::Obj(Obj::from(&literal.string[1..literal.string.len() - 1]));
 
-        AstNode::from_expression(Expression::Constant { literal, value }, span)
+        AstNode::new_expression(Expression::Constant { literal, value }, span)
     }
 
     fn advance(&mut self) -> Token {

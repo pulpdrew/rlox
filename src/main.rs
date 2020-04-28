@@ -36,12 +36,12 @@ fn run(source: String) {
     // Execute
     println!("Interpreting: ");
     let mut vm = VM::new();
-    vm.interpret(binary, &error::ErrorHandler::new(source.clone()));
+    vm.interpret(binary, &error::ErrorHandler::new(source));
 }
 
-fn run_file(filename: &String) {
+fn run_file(filename: &str) {
     let source = fs::read_to_string(&filename)
-        .expect(format!("Failed to read source file {}", filename).as_str());
+        .unwrap_or_else(|_| panic!("Failed to read source file {}", filename));
     run(source);
 }
 

@@ -68,7 +68,7 @@ impl VM {
         }
     }
 
-    fn run<'a>(&mut self) -> Result<(), RuntimeError> {
+    fn run(&mut self) -> Result<(), RuntimeError> {
         loop {
             self.chunk.disassemble_instruction(self.ip);
 
@@ -218,10 +218,10 @@ impl VM {
                 }
                 None => {
                     return Err(RuntimeError {
-                        message: String::from(format!(
+                        message: format!(
                             "Unrecognized bytecode {} at offset {}",
                             self.chunk[self.ip], self.ip
-                        )),
+                        ),
                         span: self.chunk.spans[self.ip],
                     })
                 }

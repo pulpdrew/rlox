@@ -9,21 +9,21 @@ pub struct AstNode {
 }
 
 impl AstNode {
-    pub fn from_statement(statement: Statement, span: Span) -> Self {
+    pub fn new_statement(statement: Statement, span: Span) -> Self {
         AstNode {
             span,
             expression: None,
             statement: Some(Box::new(statement)),
         }
     }
-    pub fn from_expression(expression: Expression, span: Span) -> Self {
+    pub fn new_expression(expression: Expression, span: Span) -> Self {
         AstNode {
             span,
             expression: Some(Box::new(expression)),
             statement: None,
         }
     }
-    pub fn from_ast_node(node: AstNode, span: Span) -> Self {
+    pub fn new_ast_node(node: AstNode, span: Span) -> Self {
         AstNode {
             span,
             expression: node.expression,
