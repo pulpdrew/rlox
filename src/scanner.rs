@@ -209,7 +209,7 @@ fn is_alpha_or_under(ch: Option<&char>) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::scanner;
-    use crate::token::Kind;
+    use crate::token::{Kind, Span};
 
     #[test]
     fn number_literals() {
@@ -299,6 +299,21 @@ mod tests {
     fn empty_file() {
         let mut scanner = scanner::Scanner::new(String::new());
         assert_eq!(scanner.next().kind, Kind::Eof);
+    }
+
+    #[test]
+    fn spans() {
+        let source = "
+long_id // This is a comment
+
+\"string\"
+        "
+        .trim();
+
+        let mut scanner = scanner::Scanner::new(String::from(source));
+        assert_eq!(scanner.next().span, Span::new(0, 7));
+        assert_eq!(scanner.next().span, Span::new(30, 38));
+        assert_eq!(scanner.next().span, Span::new(38, 39));
     }
 
     fn single_token_test(source: String, expected_kind: Kind) {
