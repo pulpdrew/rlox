@@ -71,7 +71,9 @@ impl VM {
 
     fn run(&mut self) -> Result<(), RuntimeError> {
         loop {
-            self.chunk.disassemble_instruction(self.ip);
+            if cfg!(disassemble) {
+                self.chunk.disassemble_instruction(self.ip);
+            }
 
             let op = FromPrimitive::from_u8(self.read_byte());
             match op {
@@ -227,9 +229,11 @@ impl VM {
                     })
                 }
             }
-            self.print_stack();
-            println!(" Globals: {:?}", self.globals);
-            println!();
+            if cfg!(feature = "disassemble") {
+                self.print_stack();
+                println!(" Globals: {:?}", self.globals);
+                println!();
+            }
         }
     }
 

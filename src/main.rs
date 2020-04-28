@@ -31,10 +31,14 @@ fn run(source: String, vm: &mut VM) {
     // Compile
     let mut compiler = Compiler::new();
     let binary = compiler.compile(ast);
-    binary.dump();
+    if cfg!(feature = "disassemble") {
+        binary.dump();
+    }
 
     // Execute
-    println!("Interpreting: ");
+    if cfg!(feature = "disassemble") {
+        println!("Interpreting: ");
+    }
     vm.interpret(binary, &error::ErrorHandler::new(source));
 }
 
