@@ -9,16 +9,9 @@ pub struct Scanner {
     index: usize,
 }
 
-impl Scanner {
-    pub fn new(source: String) -> Self {
-        Scanner {
-            characters: source.chars().collect(),
-            line: 1,
-            index: 0,
-        }
-    }
-
-    pub fn next(&mut self) -> Token {
+impl Iterator for Scanner {
+    type Item = Token;
+    fn next(&mut self) -> Option<Self::Item> {
         self.consume_whitespace();
 
         match self.peek(0) {
@@ -53,6 +46,16 @@ impl Scanner {
             None => self.make_token(Kind::Eof, 0),
         }
     }
+}
+
+impl Scanner {
+    pub fn new(source: String) -> Self {
+        Scanner {
+            characters: source.chars().collect(),
+            line: 1,
+            index: 0,
+        }
+    }
 
     fn advance(&mut self) -> Option<char> {
         self.index += 1;
@@ -63,7 +66,7 @@ impl Scanner {
         self.characters.get(count)
     }
 
-    fn identifier_literal(&mut self) -> Token {
+    fn identifier_literal(&mut self) -> Option<Token> {
         let mut length = 1;
         while is_digit(self.peek(length)) || is_alpha_or_under(self.peek(length)) {
             length += 1
@@ -100,7 +103,7 @@ impl Scanner {
         self.make_token(kind, length)
     }
 
-    fn number_literal(&mut self) -> Token {
+    fn number_literal(&mut self) -> Option<Token> {
         let mut length = 1;
         while is_digit(self.peek(length)) {
             length += 1
@@ -116,7 +119,7 @@ impl Scanner {
         self.make_token(Kind::NumberLiteral, length)
     }
 
-    fn string_literal(&mut self) -> Token {
+    fn string_literal(&mut self) -> Option<Token> {
         let mut length = 1;
         while self.peek(length) != Some(&'"') && length <= self.characters.len() {
             length += 1
@@ -129,16 +132,16 @@ impl Scanner {
         }
     }
 
-    fn make_token(&mut self, kind: Kind, count: usize) -> Token {
+    fn make_token(&mut self, kind: Kind, count: usize) -> Option<Token> {
         let span = match kind {
             Kind::Eof => Span::new(self.index, self.index + 1),
             _ => Span::new(self.index, self.index + count),
         };
-        Token {
+        Some(Token {
             kind,
             string: self.read_front(count),
             span,
-        }
+        })
     }
 
     fn starts_with(&self, prefix: &str) -> bool {
@@ -287,18 +290,18 @@ mod tests {
         ";
 
         let mut scanner = scanner::Scanner::new(String::from(source));
-        assert_eq!(scanner.next().kind, Kind::While);
-        assert_eq!(scanner.next().kind, Kind::LeftParen);
-        assert_eq!(scanner.next().kind, Kind::True);
-        assert_eq!(scanner.next().kind, Kind::RightParen);
-        assert_eq!(scanner.next().kind, Kind::Print);
-        assert_eq!(scanner.next().kind, Kind::StringLiteral);
+        assert_eq!(scanner.next().unwrap().kind, Kind::While);
+        assert_eq!(scanner.next().unwrap().kind, Kind::LeftParen);
+        assert_eq!(scanner.next().unwrap().kind, Kind::True);
+        assert_eq!(scanner.next().unwrap().kind, Kind::RightParen);
+        assert_eq!(scanner.next().unwrap().kind, Kind::Print);
+        assert_eq!(scanner.next().unwrap().kind, Kind::StringLiteral);
     }
 
     #[test]
     fn empty_file() {
         let mut scanner = scanner::Scanner::new(String::new());
-        assert_eq!(scanner.next().kind, Kind::Eof);
+        assert_eq!(scanner.next().unwrap().kind, Kind::Eof);
     }
 
     #[test]
@@ -311,17 +314,17 @@ long_id // This is a comment
         .trim();
 
         let mut scanner = scanner::Scanner::new(String::from(source));
-        assert_eq!(scanner.next().span, Span::new(0, 7));
-        assert_eq!(scanner.next().span, Span::new(30, 38));
-        assert_eq!(scanner.next().span, Span::new(38, 39));
+        assert_eq!(scanner.next().unwrap().span, Span::new(0, 7));
+        assert_eq!(scanner.next().unwrap().span, Span::new(30, 38));
+        assert_eq!(scanner.next().unwrap().span, Span::new(38, 39));
     }
 
     fn single_token_test(source: String, expected_kind: Kind) {
         let mut scanner = scanner::Scanner::new(source.clone());
         let token = scanner.next();
 
-        assert_eq!(token.kind, expected_kind);
-        assert_eq!(token.string, source);
-        assert_eq!(scanner.next().kind, Kind::Eof, "Expected Eof.");
+        assert_eq!(token.as_ref().unwrap().kind, expected_kind);
+        assert_eq!(token.as_ref().unwrap().string, source);
+        assert_eq!(scanner.next().unwrap().kind, Kind::Eof, "Expected Eof.");
     }
 }

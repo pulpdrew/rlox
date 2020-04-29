@@ -22,6 +22,7 @@ pub struct Executable {
     pub name: String,
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl Executable {
     /// Create a new, empty Executable with the given name
     pub fn new(name: String) -> Self {

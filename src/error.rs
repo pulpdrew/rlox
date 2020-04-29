@@ -24,7 +24,7 @@ impl<'a, W: Write> ErrorHandler<'a, W> {
     fn print_underlined_source(&self, span: &Span) {
         let mut line_start: usize = 0;
         let mut line_counter: usize = 1;
-        for line in self.source.split("\n") {
+        for line in self.source.split('\n') {
             if line_start <= span.end && line_start + line.len() >= span.start {
                 let underline_start = span.start - line_start;
                 let underline_end = cmp::min(line.len() + 1, span.end - line_start);

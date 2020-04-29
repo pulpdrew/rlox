@@ -1,5 +1,5 @@
 use crate::executable::Executable;
-use crate::object::Obj;
+use crate::object::ObjKind;
 use crate::token::Span;
 use crate::value::Value;
 
@@ -63,6 +63,12 @@ pub struct RuntimeError {
     pub span: Span,
 }
 
+impl Default for VM {
+    fn default() -> Self {
+        VM::new()
+    }
+}
+
 impl VM {
     pub fn new() -> Self {
         VM {
@@ -82,7 +88,7 @@ impl VM {
         self.bin = bin;
 
         loop {
-            if cfg!(disassemble) {
+            if cfg!(feature = "disassemble") {
                 self.bin.disassemble_instruction(self.ip);
             }
 
@@ -137,8 +143,8 @@ impl VM {
                 Some(OpCode::GetGlobal) => {
                     let index = self.read_byte() as u16;
                     let name_arg = self.bin.get_constant(index).clone();
-                    if let Value::Obj(Obj::String(name)) = name_arg {
-                        let var_value = match self.globals.get(&*name) {
+                    if let Value::Obj(name, ObjKind::String) = name_arg {
+                        let var_value = match self.globals.get(&*name.as_string().unwrap()) {
                             Some(value) => value.clone(),
                             None => {
                                 return Err(RuntimeError {
@@ -158,8 +164,8 @@ impl VM {
                 Some(OpCode::GetLongGlobal) => {
                     let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
                     let name_arg = self.bin.get_constant(index).clone();
-                    if let Value::Obj(Obj::String(name)) = name_arg {
-                        let var_value = match self.globals.get(&*name) {
+                    if let Value::Obj(name, ObjKind::String) = name_arg {
+                        let var_value = match self.globals.get(&*name.as_string().unwrap()) {
                             Some(value) => value.clone(),
                             None => {
                                 return Err(RuntimeError {
@@ -178,8 +184,9 @@ impl VM {
                 }
                 Some(OpCode::SetGlobal) => {
                     let index = self.read_byte() as u16;
-                    if let Value::Obj(Obj::String(name)) = self.bin.get_constant(index).clone() {
-                        if self.globals.contains_key(&*name) {
+                    if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
+                    {
+                        if self.globals.contains_key(&*name.as_string().unwrap()) {
                             self.globals
                                 .insert(name.clone().to_string(), self.peek(0).clone());
                         } else {
@@ -194,8 +201,9 @@ impl VM {
                 }
                 Some(OpCode::SetLongGlobal) => {
                     let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
-                    if let Value::Obj(Obj::String(name)) = self.bin.get_constant(index).clone() {
-                        if self.globals.contains_key(&*name) {
+                    if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
+                    {
+                        if self.globals.contains_key(&*name.as_string().unwrap()) {
                             self.globals
                                 .insert(name.clone().to_string(), self.peek(0).clone());
                         } else {
@@ -213,8 +221,10 @@ impl VM {
                 }
                 Some(OpCode::DeclareGlobal) => {
                     let index = self.read_byte() as u16;
-                    if let Value::Obj(Obj::String(name)) = self.bin.get_constant(index).clone() {
-                        self.globals.insert(name.clone().to_string(), Value::Nil);
+                    if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
+                    {
+                        self.globals
+                            .insert(name.as_string().unwrap().clone(), Value::Nil);
                     } else {
                         panic!(
                             "Invalid SetLongGlobal operand, references {:?}",
@@ -224,7 +234,8 @@ impl VM {
                 }
                 Some(OpCode::DeclareLongGlobal) => {
                     let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
-                    if let Value::Obj(Obj::String(name)) = self.bin.get_constant(index).clone() {
+                    if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
+                    {
                         self.globals.insert(name.clone().to_string(), Value::Nil);
                     } else {
                         panic!(
@@ -281,8 +292,8 @@ impl VM {
                         });
                     }
                 },
-                Value::Obj(Obj::String(_)) => match right {
-                    Value::Obj(Obj::String(_)) => {}
+                Value::Obj(_, ObjKind::String) => match right {
+                    Value::Obj(_, ObjKind::String) => {}
                     _ => {
                         return Err(RuntimeError {
                             message: String::from("Cannot apply '+' to String and Non-String"),

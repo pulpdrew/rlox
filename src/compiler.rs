@@ -1,11 +1,10 @@
 use crate::ast::{AstNode, Expression, Statement};
 use crate::executable::Executable;
-use crate::object::Obj;
 use crate::token::{Kind, Span};
 use crate::value::Value;
 use crate::vm::OpCode;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Compiler {}
 
 impl Compiler {
@@ -38,7 +37,7 @@ impl Compiler {
             Statement::Declaration {
                 name, initializer, ..
             } => {
-                let name_value = Value::Obj(Obj::from(name.string.clone()));
+                let name_value = Value::from(name.string.clone());
                 bin.push_constant_inst(
                     OpCode::DeclareGlobal,
                     name_value.clone(),
@@ -98,14 +97,14 @@ impl Compiler {
             Expression::Assignment { lvalue, rvalue, .. } => {
                 if let Expression::Variable { name } = lvalue.expression() {
                     self.compile_expression(bin, rvalue);
-                    let name_value = Value::Obj(Obj::from(name.string.clone()));
+                    let name_value = Value::from(name.string.clone());
                     bin.push_constant_inst(OpCode::SetGlobal, name_value, expression_node.span);
                 } else {
                     panic!("Assignment to non-lvalue {:?}", lvalue);
                 }
             }
             Expression::Variable { name } => {
-                let name_value = Value::Obj(Obj::from(name.string.clone()));
+                let name_value = Value::from(name.string.clone());
                 bin.push_constant_inst(OpCode::GetGlobal, name_value, name.span);
             }
         }

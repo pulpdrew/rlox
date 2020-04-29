@@ -1,9 +1,20 @@
 use std::fmt;
-use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub enum Obj {
-    String(Rc<String>),
+    String(String),
+}
+#[derive(Debug, Clone)]
+pub enum ObjKind {
+    String,
+}
+
+impl Obj {
+    pub fn as_string(&self) -> Result<&String, ()> {
+        match self {
+            Obj::String(s) => Ok(&s),
+        }
+    }
 }
 
 impl fmt::Display for Obj {
@@ -14,14 +25,21 @@ impl fmt::Display for Obj {
     }
 }
 
+#[cfg(feature = "trace_drops")]
+impl Drop for Obj {
+    fn drop(&mut self) {
+        println!("**Dropped {:?}**", self)
+    }
+}
+
 impl From<String> for Obj {
     fn from(string: String) -> Self {
-        Obj::String(Rc::new(string))
+        Obj::String(string)
     }
 }
 
 impl From<&str> for Obj {
     fn from(string: &str) -> Self {
-        Obj::String(Rc::new(String::from(string)))
+        Obj::String(String::from(string))
     }
 }

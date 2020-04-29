@@ -1,6 +1,5 @@
 use crate::ast::{AstNode, Expression, Statement};
 use crate::error::ErrorHandler;
-use crate::object::Obj;
 use crate::scanner::Scanner;
 use crate::token::{Kind, Span, Token};
 use crate::value::Value;
@@ -19,8 +18,8 @@ pub struct Parser<'a, W: Write> {
 impl<'a, W: Write> Parser<'a, W> {
     pub fn new(source: String, handler: &'a ErrorHandler<'a, W>) -> Self {
         let mut scanner = Scanner::new(source);
-        let current = scanner.next();
-        let next = scanner.next();
+        let current = scanner.next().unwrap();
+        let next = scanner.next().unwrap();
         Parser {
             scanner,
             current,
@@ -97,7 +96,7 @@ impl<'a, W: Write> Parser<'a, W> {
     }
 
     fn statement(&mut self) -> AstNode {
-        let statement = match self.current.kind {
+        match self.current.kind {
             Kind::Print => self.print_statement(),
             _ => {
                 let expression = self.expression();
@@ -117,9 +116,7 @@ impl<'a, W: Write> Parser<'a, W> {
                     }
                 }
             }
-        };
-
-        statement
+        }
     }
 
     fn print_statement(&mut self) -> AstNode {
@@ -267,7 +264,7 @@ impl<'a, W: Write> Parser<'a, W> {
 
                 AstNode::new_expression(
                     Expression::Unary {
-                        operator: operator,
+                        operator,
                         expression: Box::new(expression),
                     },
                     new_span,
@@ -359,7 +356,7 @@ impl<'a, W: Write> Parser<'a, W> {
     fn string(&mut self) -> AstNode {
         let literal = self.advance();
         let span = literal.span;
-        let value = Value::Obj(Obj::from(&literal.string[1..literal.string.len() - 1]));
+        let value = Value::from(&literal.string[1..literal.string.len() - 1]);
 
         AstNode::new_expression(Expression::Constant { literal, value }, span)
     }
@@ -368,7 +365,7 @@ impl<'a, W: Write> Parser<'a, W> {
         let previous = self.current.clone();
         self.current = self.next.clone();
         loop {
-            self.next = self.scanner.next();
+            self.next = self.scanner.next().unwrap();
             if let Kind::Error = self.next.kind {
                 self.error_at_next(format!("Unknown character {}", self.next.string).as_str());
             } else {

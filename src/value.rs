@@ -1,4 +1,4 @@
-use crate::object::Obj;
+use crate::object::{Obj, ObjKind};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops;
@@ -9,7 +9,7 @@ pub enum Value {
     Number(f64),
     Bool(bool),
     Nil,
-    Obj(Obj),
+    Obj(Rc<Obj>, ObjKind),
 }
 
 impl Value {
@@ -49,8 +49,8 @@ impl Value {
         match self {
             Value::Bool(b) => *b,
             Value::Nil => false,
-            Value::Number(n) => (n != &0f64),
-            Value::Obj(_) => true,
+            Value::Number(n) => (n - 0f64).abs() > std::f64::EPSILON,
+            Value::Obj(..) => true,
         }
     }
 }
@@ -65,9 +65,9 @@ impl ops::Add for Value {
             } else {
                 panic!("Attempted to add [Number] + [Not a number]");
             }
-        } else if let Value::Obj(Obj::String(left)) = self {
-            if let Value::Obj(Obj::String(right)) = rhs {
-                Value::Obj(Obj::String(Rc::new(format!("{}{}", left, right))))
+        } else if let Value::Obj(left, ObjKind::String) = self {
+            if let Value::Obj(right, ObjKind::String) = rhs {
+                Value::from(format!("{}{}", left, right))
             } else {
                 panic!("Attempted to add [String] + [Not a String]");
             }
@@ -146,7 +146,7 @@ impl PartialEq for Value {
                 _ => false,
             },
             Value::Nil => other.is_nil(),
-            Value::Obj(_) => other.is_obj(),
+            Value::Obj(..) => other.is_obj(),
         }
     }
 }
@@ -177,7 +177,7 @@ impl fmt::Display for Value {
             Value::Nil => write!(f, "nil"),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Number(n) => write!(f, "{}", n),
-            Value::Obj(o) => write!(f, "{}", o),
+            Value::Obj(o, ..) => write!(f, "{}", o),
         }
     }
 }
@@ -191,5 +191,17 @@ impl From<f64> for Value {
 impl From<bool> for Value {
     fn from(b: bool) -> Self {
         Value::Bool(b)
+    }
+}
+
+impl From<String> for Value {
+    fn from(string: String) -> Self {
+        Value::Obj(Rc::new(Obj::from(string)), ObjKind::String)
+    }
+}
+
+impl From<&str> for Value {
+    fn from(string: &str) -> Self {
+        Value::Obj(Rc::new(Obj::from(string)), ObjKind::String)
     }
 }
