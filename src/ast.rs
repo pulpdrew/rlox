@@ -37,18 +37,6 @@ impl AstNode {
             statement: None,
         }
     }
-    // pub fn is_expression(&self) -> bool {
-    //     match &self.expression {
-    //         Some(_) => true,
-    //         None => false,
-    //     }
-    // }
-    // pub fn is_statment(&self) -> bool {
-    //     match &self.statement {
-    //         Some(_) => true,
-    //         None => false,
-    //     }
-    // }
     pub fn expression(&self) -> &Expression {
         self.expression
             .as_ref()
@@ -103,5 +91,9 @@ pub enum Statement {
         name: Token,
         operator: Option<Token>,
         initializer: Option<AstNode>,
+    },
+    Block {
+        declarations: Vec<AstNode>,
+        rbrace: Token,
     },
 }

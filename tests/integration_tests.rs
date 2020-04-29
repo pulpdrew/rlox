@@ -93,7 +93,7 @@ fn globals() {
 9
 9
 9
-nil
+9
 Hi
 nil
 "
@@ -156,6 +156,102 @@ fn arithmetic() {
     let expected_stderr = "".trim();
     let expected_stdout = "
 -2
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}
+
+#[test]
+fn blocks() {
+    let source = "
+        print 1;
+        {
+            print 2;
+        }
+        print 3;
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+1
+2
+3
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}
+
+#[test]
+fn locals() {
+    let source = "
+        var a = 1;
+        print a;
+        {
+            var a;
+            print a;
+            a = 2;
+            print a;
+
+            var b = 3;
+            print a;
+            print b;
+        }
+        print a;
+        {
+            a = 3;
+            var a = 2;
+            print a;
+        }
+        print a;
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+1
+nil
+2
+2
+3
+1
+2
+3
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}
+
+#[test]
+fn nested_locals() {
+    let source = "   
+    {
+        var a = 1;
+        {
+            var a = 2;
+            print a;
+        }
+        print a;
+    }
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+2
+1
     "
     .trim();
 

@@ -1,22 +1,34 @@
 use crate::ast::{AstNode, Expression, Statement};
-use crate::error::ErrorHandler;
+use crate::error::RLoxError;
 use crate::scanner::Scanner;
 use crate::token::{Kind, Span, Token};
 use crate::value::Value;
-use std::io::Write;
+#[derive(Debug)]
+pub struct ParsingError {
+    message: String,
+    span: Span,
+}
+
+impl RLoxError for ParsingError {
+    fn span(&self) -> Span {
+        self.span
+    }
+    fn message(&self) -> String {
+        format!("Parsing Error - {}", self.message)
+    }
+}
 
 #[derive(Debug)]
-pub struct Parser<'a, W: Write> {
+pub struct Parser {
     scanner: Scanner,
     current: Token,
     next: Token,
-    pub had_error: bool,
-    pub panic_mode: bool,
-    handler: &'a ErrorHandler<'a, W>,
+    panic_mode: bool,
+    errors: Vec<ParsingError>,
 }
 
-impl<'a, W: Write> Parser<'a, W> {
-    pub fn new(source: String, handler: &'a ErrorHandler<'a, W>) -> Self {
+impl Parser {
+    pub fn new(source: String) -> Self {
         let mut scanner = Scanner::new(source);
         let current = scanner.next().unwrap();
         let next = scanner.next().unwrap();
@@ -24,19 +36,22 @@ impl<'a, W: Write> Parser<'a, W> {
             scanner,
             current,
             next,
-            had_error: false,
             panic_mode: false,
-            handler,
+            errors: vec![],
         }
     }
 
-    pub fn parse_program(&mut self) -> Vec<AstNode> {
+    pub fn parse_program(&mut self) -> Result<Vec<AstNode>, Vec<ParsingError>> {
         let mut program = vec![];
         while self.current.kind != Kind::Eof {
             program.push(self.declaration());
         }
 
-        program
+        if self.errors.is_empty() {
+            Ok(program)
+        } else {
+            Err(self.errors.drain(0..).collect())
+        }
     }
 
     fn declaration(&mut self) -> AstNode {
@@ -98,6 +113,7 @@ impl<'a, W: Write> Parser<'a, W> {
     fn statement(&mut self) -> AstNode {
         match self.current.kind {
             Kind::Print => self.print_statement(),
+            Kind::LeftBrace => self.block_statement(),
             _ => {
                 let expression = self.expression();
                 match self.eat(Kind::Semicolon, "Expected ';' after expression") {
@@ -119,10 +135,39 @@ impl<'a, W: Write> Parser<'a, W> {
         }
     }
 
+    fn block_statement(&mut self) -> AstNode {
+        let lbrace = self.advance();
+
+        let mut declarations = vec![];
+        loop {
+            match self.current.kind {
+                Kind::RightBrace | Kind::Eof => break,
+                _ => declarations.push(self.declaration()),
+            }
+        }
+
+        match self.eat(Kind::RightBrace, "Expected '}' after block statement") {
+            Ok(rbrace) => {
+                let new_span = Span::merge(vec![&lbrace.span, &rbrace.span]);
+                AstNode::new_statement(
+                    Statement::Block {
+                        declarations,
+                        rbrace,
+                    },
+                    new_span,
+                )
+            }
+            Err(_) => {
+                self.synchronize();
+                AstNode::none()
+            }
+        }
+    }
+
     fn print_statement(&mut self) -> AstNode {
         let keyword = self.advance();
         let expression = self.expression();
-        match self.eat(Kind::Semicolon, "Expected ';' after print expression") {
+        match self.eat(Kind::Semicolon, "Expected ';' after print statement") {
             Ok(semi) => {
                 let new_span = Span::merge(vec![&keyword.span, &expression.span, &semi.span]);
                 AstNode::new_statement(
@@ -398,9 +443,11 @@ impl<'a, W: Write> Parser<'a, W> {
             return;
         }
         self.panic_mode = true;
-        self.had_error = true;
 
-        self.handler.error(span, message);
+        self.errors.push(ParsingError {
+            message: message.to_string(),
+            span: *span,
+        });
     }
 
     fn synchronize(&mut self) {

@@ -1,5 +1,5 @@
-use rlox::compiler::Compiler;
-use rlox::error::ErrorHandler;
+use rlox::compiler;
+use rlox::error::ErrorReporter;
 use rlox::parser::Parser;
 use rlox::vm::VM;
 use std::io::Write;
@@ -34,24 +34,36 @@ pub fn run(source: String) -> (Output, Output) {
     let mut stdout = Output::new();
     let mut stderr = Output::new();
 
+    let mut reporter = ErrorReporter::new(source.clone(), &mut stderr);
+
     // Parse
-    let handler = ErrorHandler::new(source.clone(), &mut stderr);
-    let mut parser = Parser::new(source.clone(), &handler);
-    let ast = parser.parse_program();
-    if parser.had_error {
-        return (stdout, stderr);
-    }
+    let mut parser = Parser::new(source.clone());
+    let ast = match parser.parse_program() {
+        Ok(ast) => ast,
+        Err(errors) => {
+            errors.iter().for_each(|e| reporter.report(e));
+            return (stdout, stderr);
+        }
+    };
 
     // Compile
-    let mut compiler = Compiler::new();
-    let binary = compiler.compile(ast);
+    let binary = match compiler::compile(ast) {
+        Ok(bin) => bin,
+        Err(e) => {
+            reporter.report(&e);
+            return (stdout, stderr);
+        }
+    };
+    if cfg!(feature = "disassemble") {
+        binary.dump();
+    }
 
     // Execute
-    let handler = ErrorHandler::new(source, &mut stderr);
     match vm.interpret(binary, &mut stdout) {
         Ok(_) => {}
         Err(e) => {
-            handler.error(&e.span, &e.message);
+            reporter.report(&e);
+            return (stdout, stderr);
         }
     }
 

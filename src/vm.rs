@@ -1,51 +1,25 @@
+use crate::error::RLoxError;
 use crate::executable::Executable;
 use crate::object::ObjKind;
+use crate::opcode::OpCode;
 use crate::token::Span;
 use crate::value::Value;
 
-use num_derive::FromPrimitive;
-use num_derive::ToPrimitive;
-use num_traits::FromPrimitive;
-use num_traits::ToPrimitive;
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 
-#[derive(Debug, FromPrimitive, ToPrimitive)]
-pub enum OpCode {
-    Constant,
-    LongConstant,
-    Return,
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Negate,
-    Less,
-    Greater,
-    LessEqual,
-    GreaterEqual,
-    Not,
-    Equal,
-    Print,
-    Pop,
-    DeclareGlobal,
-    DeclareLongGlobal,
-    GetGlobal,
-    SetGlobal,
-    GetLongGlobal,
-    SetLongGlobal,
+#[derive(Debug)]
+pub struct RuntimeError {
+    message: String,
+    span: Span,
 }
 
-impl From<u8> for OpCode {
-    fn from(byte: u8) -> Self {
-        FromPrimitive::from_u8(byte)
-            .unwrap_or_else(|| panic!("failed to convert {} into OpCode", byte))
+impl RLoxError for RuntimeError {
+    fn span(&self) -> Span {
+        self.span
     }
-}
-
-impl Into<u8> for OpCode {
-    fn into(self) -> u8 {
-        ToPrimitive::to_u8(&self).unwrap_or_else(|| panic!("failed to convert {:?} into u8", self))
+    fn message(&self) -> String {
+        format!("Runtime Error - {}", self.message)
     }
 }
 
@@ -55,12 +29,6 @@ pub struct VM {
     bin: Executable,
     stack: VecDeque<Value>,
     globals: HashMap<String, Value>,
-}
-
-#[derive(Debug)]
-pub struct RuntimeError {
-    pub message: String,
-    pub span: Span,
 }
 
 impl Default for VM {
@@ -92,17 +60,16 @@ impl VM {
                 self.bin.disassemble_instruction(self.ip);
             }
 
-            let op = FromPrimitive::from_u8(self.read_byte());
-            match op {
-                Some(OpCode::Constant) => {
+            match OpCode::from(self.read_byte()) {
+                OpCode::Constant => {
                     let index = self.read_byte() as u16;
                     self.push(self.bin.get_constant(index).clone());
                 }
-                Some(OpCode::LongConstant) => {
+                OpCode::LongConstant => {
                     let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
                     self.push(self.bin.get_constant(index).clone());
                 }
-                Some(OpCode::Negate) => {
+                OpCode::Negate => {
                     if self.peek(0).is_number() {
                         let value = -self.peek(0).clone();
                         self.pop();
@@ -114,33 +81,33 @@ impl VM {
                         });
                     }
                 }
-                Some(OpCode::Pop) => {
+                OpCode::Pop => {
                     self.pop();
                 }
-                Some(OpCode::Not) => {
+                OpCode::Not => {
                     let right = self.peek(0);
                     let value = Value::Bool(!right.is_truthy());
                     self.pop();
                     self.push(value);
                 }
-                Some(OpCode::Return) => return Ok(()),
-                Some(OpCode::Add)
-                | Some(OpCode::Subtract)
-                | Some(OpCode::Multiply)
-                | Some(OpCode::Divide)
-                | Some(OpCode::Less)
-                | Some(OpCode::LessEqual)
-                | Some(OpCode::Greater)
-                | Some(OpCode::GreaterEqual)
-                | Some(OpCode::Equal) => match self.binary_op(&op.unwrap()) {
+                OpCode::Return => return Ok(()),
+                op @ OpCode::Add
+                | op @ OpCode::Subtract
+                | op @ OpCode::Multiply
+                | op @ OpCode::Divide
+                | op @ OpCode::Less
+                | op @ OpCode::LessEqual
+                | op @ OpCode::Greater
+                | op @ OpCode::GreaterEqual
+                | op @ OpCode::Equal => match self.binary_op(&op) {
                     Ok(()) => {}
                     Err(e) => return Err(e),
                 },
-                Some(OpCode::Print) => {
+                OpCode::Print => {
                     writeln!(output_stream, "{:}", self.pop()).unwrap();
                     output_stream.flush().unwrap();
                 }
-                Some(OpCode::GetGlobal) => {
+                OpCode::GetGlobal => {
                     let index = self.read_byte() as u16;
                     let name_arg = self.bin.get_constant(index).clone();
                     if let Value::Obj(name, ObjKind::String) = name_arg {
@@ -161,7 +128,7 @@ impl VM {
                         panic!("Attempt to assign to global {:?}", self.peek(0))
                     }
                 }
-                Some(OpCode::GetLongGlobal) => {
+                OpCode::GetLongGlobal => {
                     let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
                     let name_arg = self.bin.get_constant(index).clone();
                     if let Value::Obj(name, ObjKind::String) = name_arg {
@@ -182,7 +149,7 @@ impl VM {
                         panic!("Attempt to assign to global {:?}", self.peek(0))
                     }
                 }
-                Some(OpCode::SetGlobal) => {
+                OpCode::SetGlobal => {
                     let index = self.read_byte() as u16;
                     if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
                     {
@@ -191,7 +158,7 @@ impl VM {
                                 .insert(name.clone().to_string(), self.peek(0).clone());
                         } else {
                             return Err(RuntimeError {
-                                message: format!("Assigned to undeclared global {:?}", name),
+                                message: format!("Assigned to undeclared global {:}", name),
                                 span: self.bin.spans[self.ip - 2],
                             });
                         }
@@ -199,7 +166,7 @@ impl VM {
                         panic!("Invalid SetGlobal operand, references {:?}", self.peek(0))
                     }
                 }
-                Some(OpCode::SetLongGlobal) => {
+                OpCode::SetLongGlobal => {
                     let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
                     if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
                     {
@@ -208,7 +175,7 @@ impl VM {
                                 .insert(name.clone().to_string(), self.peek(0).clone());
                         } else {
                             return Err(RuntimeError {
-                                message: format!("Assigned to undeclared global {:?}", name),
+                                message: format!("Assigned to undeclared global {:}", name),
                                 span: self.bin.spans[self.ip - 3],
                             });
                         }
@@ -219,7 +186,7 @@ impl VM {
                         )
                     }
                 }
-                Some(OpCode::DeclareGlobal) => {
+                OpCode::DeclareGlobal => {
                     let index = self.read_byte() as u16;
                     if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
                     {
@@ -232,7 +199,7 @@ impl VM {
                         )
                     }
                 }
-                Some(OpCode::DeclareLongGlobal) => {
+                OpCode::DeclareLongGlobal => {
                     let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
                     if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
                     {
@@ -244,14 +211,14 @@ impl VM {
                         )
                     }
                 }
-                None => {
-                    return Err(RuntimeError {
-                        message: format!(
-                            "Unrecognized bytecode {} at offset {}",
-                            self.bin[self.ip], self.ip
-                        ),
-                        span: self.bin.spans[self.ip],
-                    })
+                OpCode::GetLocal => {
+                    let index = self.read_byte() as usize;
+                    self.push(self.peek(index).clone());
+                }
+                OpCode::SetLocal => {
+                    let index = self.read_byte() as usize;
+                    let stack_len = self.stack.len();
+                    self.stack[stack_len - 2 - index] = self.peek(0).clone();
                 }
             }
             if cfg!(feature = "disassemble") {

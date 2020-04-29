@@ -1,7 +1,7 @@
 extern crate rlox;
 
-use rlox::compiler::Compiler;
-use rlox::error::ErrorHandler;
+use rlox::compiler;
+use rlox::error::ErrorReporter;
 use rlox::parser::Parser;
 use rlox::vm::VM;
 use std::env;
@@ -10,28 +10,35 @@ use std::io::{self, Write};
 
 fn run(source: String, vm: &mut VM) {
     let mut stderr = std::io::stderr();
+    let mut reporter = ErrorReporter::new(source.clone(), &mut stderr);
 
     // Parse
-    let handler = ErrorHandler::new(source.clone(), &mut stderr);
-    let mut parser = Parser::new(source.clone(), &handler);
-    let ast = parser.parse_program();
-    if parser.had_error {
-        return;
-    }
+    let mut parser = Parser::new(source);
+    let ast = match parser.parse_program() {
+        Ok(ast) => ast,
+        Err(errors) => {
+            errors.iter().for_each(|e| reporter.report(e));
+            return;
+        }
+    };
 
     // Compile
-    let mut compiler = Compiler::new();
-    let binary = compiler.compile(ast);
+    let binary = match compiler::compile(ast) {
+        Ok(bin) => bin,
+        Err(e) => {
+            reporter.report(&e);
+            return;
+        }
+    };
     if cfg!(feature = "disassemble") {
         binary.dump();
     }
 
     // Execute
-    let handler = ErrorHandler::new(source, &mut stderr);
     match vm.interpret(binary, &mut std::io::stdout()) {
         Ok(_) => {}
         Err(e) => {
-            handler.error(&e.span, &e.message);
+            reporter.report(&e);
         }
     }
 }

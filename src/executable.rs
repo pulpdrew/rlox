@@ -1,6 +1,6 @@
+use crate::opcode::OpCode;
 use crate::token::Span;
 use crate::value::Value;
-use crate::vm::OpCode;
 use num_traits::FromPrimitive;
 use num_traits::ToPrimitive;
 use std::ops::Index;
@@ -37,6 +37,12 @@ impl Executable {
     /// Append an OpCode to the Executable
     pub fn push_opcode(&mut self, code: OpCode, span: Span) {
         self.code.push(to_byte(code));
+        self.spans.push(span);
+    }
+
+    /// Append a byte to the Executable
+    pub fn push_byte(&mut self, byte: u8, span: Span) {
+        self.code.push(byte);
         self.spans.push(span);
     }
 
@@ -115,6 +121,8 @@ impl Executable {
             Some(OpCode::GetGlobal) => self.constant_instruction("GetGlobal", offset),
             Some(OpCode::GetLongGlobal) => self.long_constant_instruction("GetLongGlobal", offset),
             Some(OpCode::DeclareGlobal) => self.constant_instruction("DeclareGlobal", offset),
+            Some(OpCode::SetLocal) => self.single_arg_instruction("SetLocal", offset),
+            Some(OpCode::GetLocal) => self.single_arg_instruction("GetLocal", offset),
             Some(OpCode::DeclareLongGlobal) => {
                 self.long_constant_instruction("DeclareLongGlobal", offset)
             }
@@ -129,6 +137,11 @@ impl Executable {
         let index = self[offset + 1];
         let value = &self.constants[index as usize];
         println!("{:<16} {:>4}[{:?}]", name, index, value);
+        offset + 2
+    }
+    fn single_arg_instruction(&self, name: &str, offset: usize) -> usize {
+        let arg = self[offset + 1];
+        println!("{:<16} {:>4}", name, arg);
         offset + 2
     }
     fn long_constant_instruction(&self, name: &str, offset: usize) -> usize {
