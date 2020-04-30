@@ -135,6 +135,44 @@ impl Compiler {
                 }
                 self.scope_depth -= 1;
             }
+            Statement::If {
+                condition,
+                if_block,
+                else_block,
+                ..
+            } => {
+                self.compile_expression(bin, condition)?;
+                bin.push_opcode(OpCode::JumpIfFalse, statement_node.span);
+                let first_jump = bin.len();
+                bin.push_u16(0 as u16, statement_node.span);
+                bin.push_opcode(OpCode::Pop, statement_node.span);
+                self.compile_statement(bin, if_block)?;
+
+                if bin.len() > u16::max_value() as usize {
+                    return Err(CompilationError {
+                        message: format!("Binary may not be more than {} bytes long.", bin.len()),
+                        span: statement_node.span,
+                    });
+                }
+
+                bin.push_opcode(OpCode::Jump, statement_node.span);
+                let second_jump = bin.len();
+                bin.push_u16(0 as u16, statement_node.span);
+                bin.replace_u16(first_jump, bin.len() as u16);
+                bin.push_opcode(OpCode::Pop, statement_node.span);
+
+                if let Some(else_block) = else_block {
+                    self.compile_statement(bin, else_block)?;
+                }
+
+                if bin.len() > u16::max_value() as usize {
+                    return Err(CompilationError {
+                        message: format!("Binary may not be more than {} bytes long.", bin.len()),
+                        span: statement_node.span,
+                    });
+                }
+                bin.replace_u16(second_jump, bin.len() as u16);
+            }
         };
 
         Ok(())
@@ -202,7 +240,7 @@ impl Compiler {
                     match self.resolve_local(name) {
                         Some((_, index)) => {
                             bin.push_opcode(OpCode::SetLocal, name.span);
-                            bin.push_byte(index as u8, name.span);
+                            bin.push_u8(index as u8, name.span);
                         }
                         None => {
                             let name_value = Value::from(name.string.clone());
@@ -223,7 +261,7 @@ impl Compiler {
             Expression::Variable { name } => match self.resolve_local(name) {
                 Some((_, index)) => {
                     bin.push_opcode(OpCode::GetLocal, name.span);
-                    bin.push_byte(index as u8, name.span);
+                    bin.push_u8(index as u8, name.span);
                 }
                 None => {
                     let name_value = Value::from(name.string.clone());

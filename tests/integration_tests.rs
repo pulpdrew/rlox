@@ -259,3 +259,88 @@ fn nested_locals() {
     assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
 }
+
+#[test]
+fn if_statements() {
+    let source = "
+    if (true) {
+        print \"A\";
+    } else {
+        print \"B\";
+    }
+
+    if (1 < 2) {
+        print \"C\";
+    }
+
+    if (1 >= 2) {
+        print \"D\";
+    } else {
+        print \"E\";
+    }
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+A
+C
+E
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}
+
+#[test]
+fn while_statements() {
+    let source = "
+    var c = 0;
+    while (c < 5) {
+        print c;
+        c = c + 1;
+    }
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+0
+1
+2
+3
+4
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}
+
+#[test]
+fn for_statements() {
+    let source = "
+for (var i = 0; i < 5; i = i + 2) {
+    print i;
+} 
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+0
+2
+4
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}

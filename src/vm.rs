@@ -60,13 +60,13 @@ impl VM {
                 self.bin.disassemble_instruction(self.ip);
             }
 
-            match OpCode::from(self.read_byte()) {
+            match OpCode::from(self.read_u8()) {
                 OpCode::Constant => {
-                    let index = self.read_byte() as u16;
+                    let index = self.read_u8() as u16;
                     self.push(self.bin.get_constant(index).clone());
                 }
                 OpCode::LongConstant => {
-                    let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
+                    let index = (self.read_u8() * u8::max_value() + self.read_u8()) as u16;
                     self.push(self.bin.get_constant(index).clone());
                 }
                 OpCode::Negate => {
@@ -108,7 +108,7 @@ impl VM {
                     output_stream.flush().unwrap();
                 }
                 OpCode::GetGlobal => {
-                    let index = self.read_byte() as u16;
+                    let index = self.read_u8() as u16;
                     let name_arg = self.bin.get_constant(index).clone();
                     if let Value::Obj(name, ObjKind::String) = name_arg {
                         let var_value = match self.globals.get(&*name.as_string().unwrap()) {
@@ -129,7 +129,7 @@ impl VM {
                     }
                 }
                 OpCode::GetLongGlobal => {
-                    let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
+                    let index = (self.read_u8() * u8::max_value() + self.read_u8()) as u16;
                     let name_arg = self.bin.get_constant(index).clone();
                     if let Value::Obj(name, ObjKind::String) = name_arg {
                         let var_value = match self.globals.get(&*name.as_string().unwrap()) {
@@ -150,7 +150,7 @@ impl VM {
                     }
                 }
                 OpCode::SetGlobal => {
-                    let index = self.read_byte() as u16;
+                    let index = self.read_u8() as u16;
                     if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
                     {
                         if self.globals.contains_key(&*name.as_string().unwrap()) {
@@ -167,7 +167,7 @@ impl VM {
                     }
                 }
                 OpCode::SetLongGlobal => {
-                    let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
+                    let index = (self.read_u8() * u8::max_value() + self.read_u8()) as u16;
                     if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
                     {
                         if self.globals.contains_key(&*name.as_string().unwrap()) {
@@ -187,7 +187,7 @@ impl VM {
                     }
                 }
                 OpCode::DeclareGlobal => {
-                    let index = self.read_byte() as u16;
+                    let index = self.read_u8() as u16;
                     if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
                     {
                         self.globals
@@ -200,7 +200,7 @@ impl VM {
                     }
                 }
                 OpCode::DeclareLongGlobal => {
-                    let index = (self.read_byte() * u8::max_value() + self.read_byte()) as u16;
+                    let index = (self.read_u8() * u8::max_value() + self.read_u8()) as u16;
                     if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
                     {
                         self.globals.insert(name.clone().to_string(), Value::Nil);
@@ -212,13 +212,29 @@ impl VM {
                     }
                 }
                 OpCode::GetLocal => {
-                    let index = self.read_byte() as usize;
+                    let index = self.read_u8() as usize;
                     self.push(self.peek(index).clone());
                 }
                 OpCode::SetLocal => {
-                    let index = self.read_byte() as usize;
+                    let index = self.read_u8() as usize;
                     let stack_len = self.stack.len();
                     self.stack[stack_len - 2 - index] = self.peek(0).clone();
+                }
+                OpCode::Jump => {
+                    let destination = self.read_u16();
+                    self.ip = destination as usize;
+                }
+                OpCode::JumpIfTrue => {
+                    let destination = self.read_u16();
+                    if self.peek(0).is_truthy() {
+                        self.ip = destination as usize;
+                    }
+                }
+                OpCode::JumpIfFalse => {
+                    let destination = self.read_u16();
+                    if !self.peek(0).is_truthy() {
+                        self.ip = destination as usize;
+                    }
                 }
             }
             if cfg!(feature = "disassemble") {
@@ -296,15 +312,29 @@ impl VM {
         Ok(())
     }
 
-    fn read_byte(&mut self) -> u8 {
+    fn read_u8(&mut self) -> u8 {
         if self.ip >= self.bin.len() {
             panic!(
-                "read_byte out of bounds. bin: {}, ip: {}",
+                "read_u8 out of bounds. bin: {}, ip: {}",
                 self.bin.name, self.ip
             );
         }
         self.ip += 1;
         self.bin[self.ip - 1]
+    }
+
+    fn read_u16(&mut self) -> u16 {
+        if self.ip >= self.bin.len() {
+            panic!(
+                "read_u16 out of bounds. bin: {}, ip: {}",
+                self.bin.name, self.ip
+            );
+        }
+        let high = self.bin[self.ip];
+        let low = self.bin[self.ip + 1];
+
+        self.ip += 2;
+        ((high as u16) << 8) + low as u16
     }
 
     fn push(&mut self, value: Value) {

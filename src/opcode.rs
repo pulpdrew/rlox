@@ -29,6 +29,9 @@ pub enum OpCode {
     SetLongGlobal,
     GetLocal,
     SetLocal,
+    Jump,
+    JumpIfTrue,
+    JumpIfFalse,
 }
 
 impl From<u8> for OpCode {

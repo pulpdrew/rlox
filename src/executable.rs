@@ -41,9 +41,33 @@ impl Executable {
     }
 
     /// Append a byte to the Executable
-    pub fn push_byte(&mut self, byte: u8, span: Span) {
-        self.code.push(byte);
+    pub fn push_u8(&mut self, value: u8, span: Span) {
+        self.code.push(value);
         self.spans.push(span);
+    }
+
+    /// Append a u16 to the Executable as two bytes
+    pub fn push_u16(&mut self, value: u16, span: Span) {
+        let high = (value >> 8) as u8;
+        let low = value as u8;
+
+        self.code.push(high);
+        self.code.push(low);
+        self.spans.push(span);
+        self.spans.push(span);
+    }
+
+    /// Replace a u8 in the executable with the given value
+    pub fn replace_u8(&mut self, index: usize, value: u8) {
+        self.code[index] = value;
+    }
+
+    /// Replace a u16 in the executable with the given value
+    pub fn replace_u16(&mut self, index: usize, value: u16) {
+        let high = (value >> 8) as u8;
+        let low = value as u8;
+        self.code[index] = high;
+        self.code[index + 1] = low;
     }
 
     /// Add a constant to the list of constants and an instruction to
@@ -56,15 +80,11 @@ impl Executable {
 
         let index: usize = self.constants.len() - 1;
         if index <= (u8::max_value() as usize) {
-            self.code.push(to_byte(op));
-            self.code.push(index as u8);
-            self.spans.push(span);
+            self.push_u8(op.into(), span);
+            self.push_u8(index as u8, span);
         } else if index <= u16::max_value() as usize {
-            self.code.push(to_byte(op) + 1);
-            self.code.push((index / 256) as u8);
-            self.code.push((index % 256) as u8);
-            self.spans.push(span);
-            self.spans.push(span);
+            self.push_u8(op.into(), span);
+            self.push_u16(index as u16, span);
         } else {
             eprintln!("Cannot have more than {} constants", u16::max_value())
         }
@@ -123,6 +143,9 @@ impl Executable {
             Some(OpCode::DeclareGlobal) => self.constant_instruction("DeclareGlobal", offset),
             Some(OpCode::SetLocal) => self.single_arg_instruction("SetLocal", offset),
             Some(OpCode::GetLocal) => self.single_arg_instruction("GetLocal", offset),
+            Some(OpCode::Jump) => self.single_long_arg_instruction("Jump", offset),
+            Some(OpCode::JumpIfTrue) => self.single_long_arg_instruction("JumpIfTrue", offset),
+            Some(OpCode::JumpIfFalse) => self.single_long_arg_instruction("JumpIfFalse", offset),
             Some(OpCode::DeclareLongGlobal) => {
                 self.long_constant_instruction("DeclareLongGlobal", offset)
             }
@@ -143,6 +166,11 @@ impl Executable {
         let arg = self[offset + 1];
         println!("{:<16} {:>4}", name, arg);
         offset + 2
+    }
+    fn single_long_arg_instruction(&self, name: &str, offset: usize) -> usize {
+        let arg = ((self[offset + 1] as u16) << 8) + self[offset + 2] as u16;
+        println!("{:<16} {:>4}", name, arg);
+        offset + 3
     }
     fn long_constant_instruction(&self, name: &str, offset: usize) -> usize {
         let index = self[offset + 1] * u8::max_value() + self[offset + 2];

@@ -82,7 +82,7 @@ impl Parser {
                 Statement::Declaration {
                     name,
                     operator: Some(operator),
-                    initializer: Some(initializer),
+                    initializer: Some(Box::new(initializer)),
                 },
                 span,
             )
@@ -114,6 +114,7 @@ impl Parser {
         match self.current.kind {
             Kind::Print => self.print_statement(),
             Kind::LeftBrace => self.block_statement(),
+            Kind::If => self.if_statement(),
             _ => {
                 let expression = self.expression();
                 match self.eat(Kind::Semicolon, "Expected ';' after expression") {
@@ -133,6 +134,49 @@ impl Parser {
                 }
             }
         }
+    }
+
+    fn if_statement(&mut self) -> AstNode {
+        let keyword = self.advance();
+        match self.eat(Kind::LeftParen, "Expected '(' after 'if'.") {
+            Ok(_) => {}
+            Err(_) => {
+                self.synchronize();
+                return AstNode::none();
+            }
+        }
+
+        let condition = self.expression();
+
+        match self.eat(Kind::RightParen, "Expected ')' after if condition.") {
+            Ok(_) => {}
+            Err(_) => {
+                self.synchronize();
+                return AstNode::none();
+            }
+        }
+
+        let if_block = self.statement();
+        let mut span = Span::merge(vec![&keyword.span, &if_block.span]);
+
+        let else_block = if let Kind::Else = self.current.kind {
+            self.advance();
+            let stmt = self.statement();
+            span = Span::merge(vec![&span, &stmt.span]);
+            Some(Box::new(stmt))
+        } else {
+            None
+        };
+
+        AstNode::new_statement(
+            Statement::If {
+                keyword,
+                condition: Box::new(condition),
+                if_block: Box::new(if_block),
+                else_block,
+            },
+            span,
+        )
     }
 
     fn block_statement(&mut self) -> AstNode {

@@ -90,10 +90,16 @@ pub enum Statement {
     Declaration {
         name: Token,
         operator: Option<Token>,
-        initializer: Option<AstNode>,
+        initializer: Option<Box<AstNode>>,
     },
     Block {
         declarations: Vec<AstNode>,
         rbrace: Token,
+    },
+    If {
+        keyword: Token,
+        condition: Box<AstNode>,
+        if_block: Box<AstNode>,
+        else_block: Option<Box<AstNode>>,
     },
 }
