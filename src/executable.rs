@@ -85,7 +85,6 @@ impl Executable {
     /// The executable may have no more that `u16::max_value()` constants.
     pub fn push_constant_inst(&mut self, op: OpCode, value: Value, span: Span) -> u16 {
         self.constants.push(value);
-        self.spans.push(span);
 
         let index: usize = self.constants.len() - 1;
         if index <= (u8::max_value() as usize) {

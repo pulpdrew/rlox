@@ -116,7 +116,7 @@ impl VM {
                             None => {
                                 return Err(RuntimeError {
                                     message: format!("Attempted to get unknown global {}", name),
-                                    span: self.bin.spans[self.ip - 2],
+                                    span: self.bin.spans[self.ip - 1],
                                 })
                             }
                         };
@@ -134,7 +134,7 @@ impl VM {
                             None => {
                                 return Err(RuntimeError {
                                     message: format!("Attempted to get unknown global {}", name),
-                                    span: self.bin.spans[self.ip - 3],
+                                    span: self.bin.spans[self.ip - 2],
                                 })
                             }
                         };
@@ -152,8 +152,8 @@ impl VM {
                                 .insert(name.clone().to_string(), self.peek(0).clone());
                         } else {
                             return Err(RuntimeError {
-                                message: format!("Assigned to undeclared global {:}", name),
-                                span: self.bin.spans[self.ip - 2],
+                                message: format!("Assigned to set undeclared global {}", name),
+                                span: self.bin.spans[self.ip - 1],
                             });
                         }
                     } else {
@@ -169,8 +169,8 @@ impl VM {
                                 .insert(name.clone().to_string(), self.peek(0).clone());
                         } else {
                             return Err(RuntimeError {
-                                message: format!("Assigned to undeclared global {:}", name),
-                                span: self.bin.spans[self.ip - 3],
+                                message: format!("Assigned to set undeclared global {}", name),
+                                span: self.bin.spans[self.ip - 2],
                             });
                         }
                     } else {
