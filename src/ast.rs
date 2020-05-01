@@ -97,9 +97,18 @@ pub enum Statement {
         rbrace: Token,
     },
     If {
-        keyword: Token,
         condition: Box<AstNode>,
         if_block: Box<AstNode>,
         else_block: Option<Box<AstNode>>,
+    },
+    While {
+        condition: Box<AstNode>,
+        block: Box<AstNode>,
+    },
+    For {
+        initializer: Option<Box<AstNode>>,
+        condition: Option<Box<AstNode>>,
+        update: Option<Box<AstNode>>,
+        block: Box<AstNode>,
     },
 }

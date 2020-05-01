@@ -120,20 +120,12 @@ impl Compiler {
                 declarations,
                 rbrace,
             } => {
-                self.scope_depth += 1;
+                self.begin_scope();
                 for statement in declarations.iter() {
                     self.compile_statement(bin, statement)?
                 }
 
-                while let Some(local) = self.locals.last() {
-                    if local.depth == self.scope_depth {
-                        bin.push_opcode(OpCode::Pop, rbrace.span);
-                        self.locals.pop();
-                    } else {
-                        break;
-                    }
-                }
-                self.scope_depth -= 1;
+                self.end_scope(bin, rbrace.span);
             }
             Statement::If {
                 condition,
@@ -172,6 +164,72 @@ impl Compiler {
                     });
                 }
                 bin.replace_u16(second_jump, bin.len() as u16);
+            }
+            Statement::While { condition, block } => {
+                let condition_index = bin.len() as u16;
+                self.compile_expression(bin, condition)?;
+                bin.push_opcode(OpCode::JumpIfFalse, statement_node.span);
+                let jump_to_end_index = bin.len();
+                bin.push_u16(0, statement_node.span);
+                bin.push_opcode(OpCode::Pop, statement_node.span);
+                self.compile_statement(bin, block)?;
+                bin.push_opcode(OpCode::Jump, statement_node.span);
+                bin.push_u16(condition_index, statement_node.span);
+
+                if bin.len() > u16::max_value() as usize {
+                    return Err(CompilationError {
+                        message: format!("Binary may not be more than {} bytes long.", bin.len()),
+                        span: statement_node.span,
+                    });
+                }
+                bin.replace_u16(jump_to_end_index, bin.len() as u16);
+                bin.push_opcode(OpCode::Pop, statement_node.span);
+            }
+            Statement::For {
+                initializer,
+                condition,
+                update,
+                block,
+            } => {
+                self.begin_scope();
+                if let Some(initializer) = initializer {
+                    self.compile_statement(bin, initializer)?;
+                }
+
+                let condition_index = bin.len() as u16;
+                let jump_to_end_index = if let Some(condition) = condition {
+                    self.compile_expression(bin, condition)?;
+                    bin.push_opcode(OpCode::JumpIfFalse, statement_node.span);
+                    let jump_to_end_index = bin.len();
+                    bin.push_u16(0, statement_node.span);
+                    bin.push_opcode(OpCode::Pop, condition.span);
+                    jump_to_end_index
+                } else {
+                    0
+                };
+
+                self.compile_statement(bin, block)?;
+                if let Some(update) = update {
+                    self.compile_expression(bin, update)?;
+                    bin.push_opcode(OpCode::Pop, update.span);
+                }
+                bin.push_opcode(OpCode::Jump, statement_node.span);
+                bin.push_u16(condition_index, statement_node.span);
+
+                if let Some(_) = condition {
+                    if bin.len() > u16::max_value() as usize {
+                        return Err(CompilationError {
+                            message: format!(
+                                "Binary may not be more than {} bytes long.",
+                                bin.len()
+                            ),
+                            span: statement_node.span,
+                        });
+                    }
+                    bin.replace_u16(jump_to_end_index, bin.len() as u16);
+                }
+                bin.push_opcode(OpCode::Pop, statement_node.span);
+                self.end_scope(bin, block.span);
             }
         };
 
@@ -280,5 +338,21 @@ impl Compiler {
             }
         }
         None
+    }
+
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self, bin: &mut Executable, end_span: Span) {
+        while let Some(local) = self.locals.last() {
+            if local.depth == self.scope_depth {
+                bin.push_opcode(OpCode::Pop, end_span);
+                self.locals.pop();
+            } else {
+                break;
+            }
+        }
+        self.scope_depth -= 1;
     }
 }

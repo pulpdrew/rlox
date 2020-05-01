@@ -327,6 +327,19 @@ fn for_statements() {
     let source = "
 for (var i = 0; i < 5; i = i + 2) {
     print i;
+}
+
+var i = 0;
+for (; i < 10;) {
+    print i;
+    i = i + 4;
+}
+
+{
+    for (var i = 0; i < 1;) {
+        print i;
+        i = 4;
+    }
 } 
     "
     .trim()
@@ -337,6 +350,10 @@ for (var i = 0; i < 5; i = i + 2) {
 0
 2
 4
+0
+4
+8
+0
     "
     .trim();
 

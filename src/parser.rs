@@ -115,30 +115,125 @@ impl Parser {
             Kind::Print => self.print_statement(),
             Kind::LeftBrace => self.block_statement(),
             Kind::If => self.if_statement(),
-            _ => {
-                let expression = self.expression();
-                match self.eat(Kind::Semicolon, "Expected ';' after expression") {
-                    Ok(semi) => {
-                        let new_span = Span::merge(vec![&expression.span, &semi.span]);
-                        AstNode::new_statement(
-                            Statement::Expression {
-                                expression: Box::new(expression),
-                            },
-                            new_span,
-                        )
-                    }
-                    Err(_) => {
-                        self.synchronize();
-                        AstNode::none()
-                    }
-                }
+            Kind::While => self.while_statement(),
+            Kind::For => self.for_statement(),
+            _ => self.expression_statement(),
+        }
+    }
+
+    fn expression_statement(&mut self) -> AstNode {
+        let expression = self.expression();
+        match self.eat(Kind::Semicolon, "Expected ';' after expression") {
+            Ok(semi) => {
+                let new_span = Span::merge(vec![&expression.span, &semi.span]);
+                AstNode::new_statement(
+                    Statement::Expression {
+                        expression: Box::new(expression),
+                    },
+                    new_span,
+                )
+            }
+            Err(_) => {
+                self.synchronize();
+                AstNode::none()
             }
         }
     }
 
+    fn for_statement(&mut self) -> AstNode {
+        let keyword = self.advance();
+        match self.eat(Kind::LeftParen, "Expected '(' after 'for.'") {
+            Ok(_) => {}
+            Err(_) => {
+                self.synchronize();
+                return AstNode::none();
+            }
+        }
+
+        let initializer = match self.current.kind {
+            Kind::Var => Some(Box::new(self.var_declaration())),
+            Kind::Semicolon => {
+                self.advance();
+                None
+            }
+            _ => Some(Box::new(self.expression_statement())),
+        };
+
+        let condition = match self.current.kind {
+            Kind::Semicolon => None,
+            _ => Some(Box::new(self.expression())),
+        };
+
+        match self.eat(Kind::Semicolon, "Expected ';' after for condition.") {
+            Ok(_) => {}
+            Err(_) => {
+                self.synchronize();
+                return AstNode::none();
+            }
+        }
+
+        let update = match self.current.kind {
+            Kind::RightParen => None,
+            _ => Some(Box::new(self.expression())),
+        };
+
+        match self.eat(Kind::RightParen, "Expected ')' before for block.") {
+            Ok(_) => {}
+            Err(_) => {
+                self.synchronize();
+                return AstNode::none();
+            }
+        }
+
+        let block = self.statement();
+        let span = Span::merge(vec![&keyword.span, &block.span]);
+
+        AstNode::new_statement(
+            Statement::For {
+                initializer,
+                condition,
+                update,
+                block: Box::new(block),
+            },
+            span,
+        )
+    }
+
+    fn while_statement(&mut self) -> AstNode {
+        let keyword = self.advance();
+        match self.eat(Kind::LeftParen, "Expected '(' after 'while.'") {
+            Ok(_) => {}
+            Err(_) => {
+                self.synchronize();
+                return AstNode::none();
+            }
+        }
+
+        let condition = self.expression();
+
+        match self.eat(Kind::RightParen, "Expected ')' after while condition.") {
+            Ok(_) => {}
+            Err(_) => {
+                self.synchronize();
+                return AstNode::none();
+            }
+        }
+
+        let block = self.statement();
+        let span = Span::merge(vec![&keyword.span, &block.span]);
+
+        AstNode::new_statement(
+            Statement::While {
+                condition: Box::new(condition),
+                block: Box::new(block),
+            },
+            span,
+        )
+    }
+
     fn if_statement(&mut self) -> AstNode {
         let keyword = self.advance();
-        match self.eat(Kind::LeftParen, "Expected '(' after 'if'.") {
+        match self.eat(Kind::LeftParen, "Expected '(' after 'if.'") {
             Ok(_) => {}
             Err(_) => {
                 self.synchronize();
@@ -170,7 +265,6 @@ impl Parser {
 
         AstNode::new_statement(
             Statement::If {
-                keyword,
                 condition: Box::new(condition),
                 if_block: Box::new(if_block),
                 else_block,

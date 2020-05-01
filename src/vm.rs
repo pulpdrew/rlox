@@ -115,10 +115,7 @@ impl VM {
                             Some(value) => value.clone(),
                             None => {
                                 return Err(RuntimeError {
-                                    message: format!(
-                                        "Attempted to get unknown variable {:?}",
-                                        name
-                                    ),
+                                    message: format!("Attempted to get unknown global {}", name),
                                     span: self.bin.spans[self.ip - 2],
                                 })
                             }
@@ -136,10 +133,7 @@ impl VM {
                             Some(value) => value.clone(),
                             None => {
                                 return Err(RuntimeError {
-                                    message: format!(
-                                        "Attempted to get unknown variable {:?}",
-                                        name
-                                    ),
+                                    message: format!("Attempted to get unknown global {}", name),
                                     span: self.bin.spans[self.ip - 3],
                                 })
                             }
