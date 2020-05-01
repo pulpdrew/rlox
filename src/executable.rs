@@ -3,7 +3,6 @@ use crate::token::Span;
 use crate::value::Value;
 use num_traits::FromPrimitive;
 use num_traits::ToPrimitive;
-use std::ops::Index;
 
 /// An Executable contains the output of compilation to be run on a VM.
 #[derive(Debug)]
@@ -40,13 +39,13 @@ impl Executable {
         self.spans.push(span);
     }
 
-    /// Append a byte to the Executable
+    /// Append a u8 to the Executable, associated with the given span
     pub fn push_u8(&mut self, value: u8, span: Span) {
         self.code.push(value);
         self.spans.push(span);
     }
 
-    /// Append a u16 to the Executable as two bytes
+    /// Append a u16 to the Executable as two bytes, each associated with the given span
     pub fn push_u16(&mut self, value: u16, span: Span) {
         let high = (value >> 8) as u8;
         let low = value as u8;
@@ -55,6 +54,16 @@ impl Executable {
         self.code.push(low);
         self.spans.push(span);
         self.spans.push(span);
+    }
+
+    /// Read a u8 from the executable at the given index
+    pub fn read_u8(&self, index: usize) -> u8 {
+        self.code[index]
+    }
+
+    /// Read a u16 from the executable (two u8s) at the given index
+    pub fn read_u16(&self, index: usize) -> u16 {
+        ((self.code[index] as u16) << 8) + self.code[index + 1] as u16
     }
 
     /// Replace a u8 in the executable with the given value
@@ -73,7 +82,7 @@ impl Executable {
     /// Add a constant to the list of constants and an instruction to
     /// access that constant.
     ///
-    /// The executable may have no more that `u16::max_value` constants.
+    /// The executable may have no more that `u16::max_value()` constants.
     pub fn push_constant_inst(&mut self, op: OpCode, value: Value, span: Span) -> u16 {
         self.constants.push(value);
         self.spans.push(span);
@@ -119,7 +128,7 @@ impl Executable {
     /// and print the result
     pub fn disassemble_instruction(&self, offset: usize) -> usize {
         print!("{:0>5}  ", offset);
-        match FromPrimitive::from_u8(self[offset]) {
+        match FromPrimitive::from_u8(self.read_u8(offset)) {
             Some(OpCode::Constant) => self.constant_instruction("Constant", offset),
             Some(OpCode::LongConstant) => self.long_constant_instruction("LongConstant", offset),
             Some(OpCode::Return) => self.simple_instruction("Return", offset),
@@ -150,30 +159,30 @@ impl Executable {
                 self.long_constant_instruction("DeclareLongGlobal", offset)
             }
             None => {
-                println!("Unknown opcode {}", self[offset]);
+                println!("Unknown opcode {}", self.read_u8(offset));
                 offset + 1
             }
         }
     }
 
     fn constant_instruction(&self, name: &str, offset: usize) -> usize {
-        let index = self[offset + 1];
+        let index = self.read_u8(offset + 1);
         let value = &self.constants[index as usize];
         println!("{:<16} {:>4}[{:?}]", name, index, value);
         offset + 2
     }
     fn single_arg_instruction(&self, name: &str, offset: usize) -> usize {
-        let arg = self[offset + 1];
+        let arg = self.read_u8(offset + 1);
         println!("{:<16} {:>4}", name, arg);
         offset + 2
     }
     fn single_long_arg_instruction(&self, name: &str, offset: usize) -> usize {
-        let arg = ((self[offset + 1] as u16) << 8) + self[offset + 2] as u16;
+        let arg = self.read_u16(offset + 1);
         println!("{:<16} {:>4}", name, arg);
         offset + 3
     }
     fn long_constant_instruction(&self, name: &str, offset: usize) -> usize {
-        let index = self[offset + 1] * u8::max_value() + self[offset + 2];
+        let index = self.read_u16(offset + 1);
         let value = &self.constants[index as usize];
         println!("{:<16} {:>4}[{:?}]", name, index, value);
         offset + 3
@@ -181,13 +190,6 @@ impl Executable {
     fn simple_instruction(&self, name: &str, offset: usize) -> usize {
         println!("{0:<16}", name);
         offset + 1
-    }
-}
-
-impl Index<usize> for Executable {
-    type Output = u8;
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.code[index]
     }
 }
 

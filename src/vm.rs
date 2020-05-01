@@ -314,7 +314,7 @@ impl VM {
             );
         }
         self.ip += 1;
-        self.bin[self.ip - 1]
+        self.bin.read_u8(self.ip - 1)
     }
 
     fn read_u16(&mut self) -> u16 {
@@ -324,11 +324,9 @@ impl VM {
                 self.bin.name, self.ip
             );
         }
-        let high = self.bin[self.ip];
-        let low = self.bin[self.ip + 1];
 
         self.ip += 2;
-        ((high as u16) << 8) + low as u16
+        self.bin.read_u16(self.ip - 2)
     }
 
     fn push(&mut self, value: Value) {
