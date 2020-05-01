@@ -216,7 +216,7 @@ impl Compiler {
                 bin.push_opcode(OpCode::Jump, statement_node.span);
                 bin.push_u16(condition_index, statement_node.span);
 
-                if let Some(_) = condition {
+                if condition.is_some() {
                     if bin.len() > u16::max_value() as usize {
                         return Err(CompilationError {
                             message: format!(
