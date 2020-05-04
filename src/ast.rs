@@ -74,6 +74,10 @@ pub enum Expression {
         value: Value,
         literal: Token,
     },
+    Call {
+        target: Box<AstNode>,
+        arguments: Vec<AstNode>,
+    },
 }
 
 /// A Statement is an AST Node that does not result in a
@@ -110,5 +114,13 @@ pub enum Statement {
         condition: Option<Box<AstNode>>,
         update: Option<Box<AstNode>>,
         block: Box<AstNode>,
+    },
+    FunDeclaration {
+        name: Token,
+        parameters: Vec<Token>,
+        body: Box<AstNode>,
+    },
+    Return {
+        value: Option<Box<AstNode>>,
     },
 }

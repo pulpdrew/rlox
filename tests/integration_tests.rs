@@ -211,6 +211,12 @@ fn locals() {
             print a;
         }
         print a;
+
+        {
+            var c = 6;
+            var d = 7;
+            print c + d;
+        }
     "
     .trim()
     .to_string();
@@ -225,6 +231,7 @@ nil
 1
 2
 3
+13
     "
     .trim();
 
@@ -353,6 +360,155 @@ for (; i < 10;) {
 0
 4
 8
+0
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}
+
+#[test]
+fn function_declaration() {
+    let source = "
+    fun foo() {
+        print \"foo\";
+    }
+    print foo;
+
+    {
+        fun foo2(a) {
+            print a;
+        }
+        print foo2;
+    }
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+<fn: foo>
+<fn: foo2>
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}
+
+#[test]
+fn function_call() {
+    let source = "
+    fun foo() {
+        print \"foo\";
+    }
+    foo();
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+foo
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}
+
+#[test]
+fn function_arguments() {
+    let source = "
+    fun foo(a, b) {
+        print a + b;
+    }
+    foo(1, 2);
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+3
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}
+
+#[test]
+fn function_return() {
+    let source = "
+    fun foo(a, b) {
+        return a + b;
+    }
+    var a = foo(1, 2);
+    print a;
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+3
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}
+
+#[test]
+fn function_local() {
+    let source = "   
+    fun foo(a, b) {
+        fun bar(c, d) {
+            print c + d;
+        }
+        bar(a, b);
+    }
+    foo(1, 2);
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+3
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stdout, stdout.contents.trim());
+    assert_eq!(expected_stderr, stderr.contents.trim());
+}
+
+#[test]
+fn function_recursive() {
+    let source = "   
+    fun foo(a, b) {
+        print a;
+        if (a > 0) {
+            foo(a - 1);
+        }
+    }
+    foo(2);
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+2
+1
 0
     "
     .trim();

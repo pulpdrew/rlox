@@ -3,7 +3,7 @@ use num_derive::ToPrimitive;
 use num_traits::FromPrimitive;
 use num_traits::ToPrimitive;
 
-#[derive(Debug, FromPrimitive, ToPrimitive)]
+#[derive(Debug, FromPrimitive, ToPrimitive, PartialEq)]
 pub enum OpCode {
     Constant,
     LongConstant,
@@ -32,6 +32,7 @@ pub enum OpCode {
     Jump,
     JumpIfTrue,
     JumpIfFalse,
+    Call,
 }
 
 impl From<u8> for OpCode {

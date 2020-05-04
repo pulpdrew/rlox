@@ -1,6 +1,7 @@
 use crate::ast::{AstNode, Expression, Statement};
 use crate::error::RLoxError;
 use crate::executable::Executable;
+use crate::object::{Obj, ObjFunction};
 use crate::opcode::OpCode;
 use crate::token::{Kind, Span, Token};
 use crate::value::Value;
@@ -22,6 +23,7 @@ impl RLoxError for CompilationError {
 
 #[derive(Debug, Default)]
 pub struct Compiler {
+    function: Option<Obj>,
     locals: Vec<Local>,
     scope_depth: usize,
 }
@@ -32,12 +34,16 @@ struct Local {
     depth: usize,
 }
 
-pub fn compile(program: Vec<AstNode>) -> Result<Executable, CompilationError> {
+pub fn compile(program: Vec<AstNode>) -> Result<ObjFunction, CompilationError> {
     let mut compiler = Compiler::new();
     let mut bin = Executable::new(String::from("script"));
 
     match compiler.compile_into(program, &mut bin) {
-        Ok(..) => Ok(bin),
+        Ok(..) => Ok(ObjFunction {
+            arity: 0,
+            bin,
+            name: Box::new(Obj::from("script")),
+        }),
         Err(e) => Err(e),
     }
 }
@@ -45,6 +51,7 @@ pub fn compile(program: Vec<AstNode>) -> Result<Executable, CompilationError> {
 impl Compiler {
     pub fn new() -> Self {
         Compiler {
+            function: None,
             locals: vec![],
             scope_depth: 0,
         }
@@ -57,12 +64,6 @@ impl Compiler {
         for node in program {
             self.compile_statement(bin, &node)?;
         }
-
-        bin.push_opcode(
-            OpCode::Return,
-            *bin.spans.last().unwrap_or(&Span::new(0, 0)),
-        );
-
         Ok(())
     }
 
@@ -231,6 +232,76 @@ impl Compiler {
                 bin.push_opcode(OpCode::Pop, statement_node.span);
                 self.end_scope(bin, block.span);
             }
+            Statement::FunDeclaration {
+                name,
+                parameters,
+                body,
+            } => {
+                // Empty the list of locals
+                let mut locals_backup: Vec<Local> = self.locals.drain(0..).collect();
+                self.begin_scope();
+
+                let span = Span::merge(vec![&name.span, &body.span]);
+
+                for param in parameters.iter() {
+                    self.locals.push(Local {
+                        name: param.clone(),
+                        depth: self.scope_depth,
+                    });
+                }
+
+                let mut function_binary = Executable::new(name.string.clone());
+                self.compile_statement(&mut function_binary, body)?;
+                function_binary.push_constant_inst(
+                    OpCode::Constant,
+                    Value::Nil,
+                    statement_node.span,
+                );
+                function_binary.push_opcode(OpCode::Return, body.span);
+                if cfg!(feature = "disassemble") {
+                    function_binary.dump();
+                }
+
+                self.end_scope(&mut function_binary, body.span);
+                self.locals = locals_backup.drain(0..).collect();
+
+                // Put the function object on the top of the stack
+                let value = Value::from(ObjFunction {
+                    name: Box::new(Obj::from(name.string.clone())),
+                    arity: parameters.len() as u8,
+                    bin: function_binary,
+                });
+                bin.push_constant_inst(OpCode::Constant, value, span);
+
+                // Assign the function to the variable of the matching name
+                let name_value = Value::from(name.string.clone());
+                if self.scope_depth == 0 {
+                    bin.push_constant_inst(
+                        OpCode::DeclareGlobal,
+                        name_value.clone(),
+                        statement_node.span,
+                    );
+                    bin.push_constant_inst(OpCode::SetGlobal, name_value, span);
+                    bin.push_opcode(OpCode::Pop, span);
+                } else {
+                    self.locals.push(Local {
+                        name: name.clone(),
+                        depth: self.scope_depth,
+                    });
+                }
+            }
+            Statement::Return { value } => {
+                match value {
+                    Some(expression) => {
+                        self.compile_expression(bin, expression)?;
+                    }
+                    None => {
+                        bin.push_constant_inst(OpCode::Constant, Value::Nil, statement_node.span);
+                    }
+                }
+
+                bin.push_opcode(OpCode::Return, statement_node.span)
+            }
         };
 
         Ok(())
@@ -326,6 +397,14 @@ impl Compiler {
                     bin.push_constant_inst(OpCode::GetGlobal, name_value, name.span);
                 }
             },
+            Expression::Call { target, arguments } => {
+                self.compile_expression(bin, target)?;
+                for arg in arguments {
+                    self.compile_expression(bin, arg)?;
+                }
+                bin.push_opcode(OpCode::Call, expression_node.span);
+                bin.push_u8(arguments.len() as u8, expression_node.span);
+            }
         };
 
         Ok(())
@@ -334,7 +413,7 @@ impl Compiler {
     fn resolve_local(&self, name: &Token) -> Option<(&Local, usize)> {
         for (index, local) in self.locals.iter().rev().enumerate() {
             if local.name.string == name.string {
-                return Some((&local, index));
+                return Some((&local, self.locals.len() - index - 1));
             }
         }
         None

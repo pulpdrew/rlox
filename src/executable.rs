@@ -1,8 +1,6 @@
 use crate::opcode::OpCode;
 use crate::token::Span;
 use crate::value::Value;
-use num_traits::FromPrimitive;
-use num_traits::ToPrimitive;
 
 /// An Executable contains the output of compilation to be run on a VM.
 #[derive(Debug)]
@@ -35,7 +33,7 @@ impl Executable {
 
     /// Append an OpCode to the Executable
     pub fn push_opcode(&mut self, code: OpCode, span: Span) {
-        self.code.push(to_byte(code));
+        self.code.push(code.into());
         self.spans.push(span);
     }
 
@@ -127,40 +125,37 @@ impl Executable {
     /// and print the result
     pub fn disassemble_instruction(&self, offset: usize) -> usize {
         print!("{:0>5}  ", offset);
-        match FromPrimitive::from_u8(self.read_u8(offset)) {
-            Some(OpCode::Constant) => self.constant_instruction("Constant", offset),
-            Some(OpCode::LongConstant) => self.long_constant_instruction("LongConstant", offset),
-            Some(OpCode::Return) => self.simple_instruction("Return", offset),
-            Some(OpCode::Add) => self.simple_instruction("Add", offset),
-            Some(OpCode::Subtract) => self.simple_instruction("Subtract", offset),
-            Some(OpCode::Multiply) => self.simple_instruction("Multiply", offset),
-            Some(OpCode::Divide) => self.simple_instruction("Divide", offset),
-            Some(OpCode::Negate) => self.simple_instruction("Negate", offset),
-            Some(OpCode::Less) => self.simple_instruction("Less", offset),
-            Some(OpCode::LessEqual) => self.simple_instruction("LessEqual", offset),
-            Some(OpCode::Greater) => self.simple_instruction("Greater", offset),
-            Some(OpCode::GreaterEqual) => self.simple_instruction("GreaterEqual", offset),
-            Some(OpCode::Equal) => self.simple_instruction("Equal", offset),
-            Some(OpCode::Not) => self.simple_instruction("Not", offset),
-            Some(OpCode::Print) => self.simple_instruction("Print", offset),
-            Some(OpCode::Pop) => self.simple_instruction("Pop", offset),
-            Some(OpCode::SetGlobal) => self.constant_instruction("SetGlobal", offset),
-            Some(OpCode::SetLongGlobal) => self.long_constant_instruction("SetLongGlobal", offset),
-            Some(OpCode::GetGlobal) => self.constant_instruction("GetGlobal", offset),
-            Some(OpCode::GetLongGlobal) => self.long_constant_instruction("GetLongGlobal", offset),
-            Some(OpCode::DeclareGlobal) => self.constant_instruction("DeclareGlobal", offset),
-            Some(OpCode::SetLocal) => self.single_arg_instruction("SetLocal", offset),
-            Some(OpCode::GetLocal) => self.single_arg_instruction("GetLocal", offset),
-            Some(OpCode::Jump) => self.single_long_arg_instruction("Jump", offset),
-            Some(OpCode::JumpIfTrue) => self.single_long_arg_instruction("JumpIfTrue", offset),
-            Some(OpCode::JumpIfFalse) => self.single_long_arg_instruction("JumpIfFalse", offset),
-            Some(OpCode::DeclareLongGlobal) => {
+        match OpCode::from(self.read_u8(offset)) {
+            OpCode::Constant => self.constant_instruction("Constant", offset),
+            OpCode::LongConstant => self.long_constant_instruction("LongConstant", offset),
+            OpCode::Return => self.simple_instruction("Return", offset),
+            OpCode::Add => self.simple_instruction("Add", offset),
+            OpCode::Subtract => self.simple_instruction("Subtract", offset),
+            OpCode::Multiply => self.simple_instruction("Multiply", offset),
+            OpCode::Divide => self.simple_instruction("Divide", offset),
+            OpCode::Negate => self.simple_instruction("Negate", offset),
+            OpCode::Less => self.simple_instruction("Less", offset),
+            OpCode::LessEqual => self.simple_instruction("LessEqual", offset),
+            OpCode::Greater => self.simple_instruction("Greater", offset),
+            OpCode::GreaterEqual => self.simple_instruction("GreaterEqual", offset),
+            OpCode::Equal => self.simple_instruction("Equal", offset),
+            OpCode::Not => self.simple_instruction("Not", offset),
+            OpCode::Print => self.simple_instruction("Print", offset),
+            OpCode::Pop => self.simple_instruction("Pop", offset),
+            OpCode::SetGlobal => self.constant_instruction("SetGlobal", offset),
+            OpCode::SetLongGlobal => self.long_constant_instruction("SetLongGlobal", offset),
+            OpCode::GetGlobal => self.constant_instruction("GetGlobal", offset),
+            OpCode::GetLongGlobal => self.long_constant_instruction("GetLongGlobal", offset),
+            OpCode::DeclareGlobal => self.constant_instruction("DeclareGlobal", offset),
+            OpCode::DeclareLongGlobal => {
                 self.long_constant_instruction("DeclareLongGlobal", offset)
             }
-            None => {
-                println!("Unknown opcode {}", self.read_u8(offset));
-                offset + 1
-            }
+            OpCode::SetLocal => self.single_arg_instruction("SetLocal", offset),
+            OpCode::GetLocal => self.single_arg_instruction("GetLocal", offset),
+            OpCode::Jump => self.single_long_arg_instruction("Jump", offset),
+            OpCode::JumpIfTrue => self.single_long_arg_instruction("JumpIfTrue", offset),
+            OpCode::JumpIfFalse => self.single_long_arg_instruction("JumpIfFalse", offset),
+            OpCode::Call => self.single_arg_instruction("Call", offset),
         }
     }
 
@@ -190,8 +185,4 @@ impl Executable {
         println!("{0:<16}", name);
         offset + 1
     }
-}
-
-fn to_byte(opcode: OpCode) -> u8 {
-    ToPrimitive::to_u8(&opcode).expect("Could not convert OpCode to u8")
 }

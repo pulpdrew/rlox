@@ -57,6 +57,10 @@ impl Parser {
     fn declaration(&mut self) -> AstNode {
         match self.current.kind {
             Kind::Var => self.var_declaration(),
+            Kind::Fun => {
+                self.advance();
+                self.function()
+            }
             _ => self.statement(),
         }
     }
@@ -110,6 +114,71 @@ impl Parser {
         }
     }
 
+    fn parameter_list(&mut self) -> Result<Vec<Token>, ()> {
+        let mut parameters = vec![];
+        parameters.push(self.advance());
+        while self.current.kind == Kind::Comma {
+            self.advance();
+            match self.eat(Kind::IdentifierLiteral, "Expected parameter name.") {
+                Ok(id) => parameters.push(id),
+                Err(_) => return Err(()),
+            }
+        }
+
+        Ok(parameters)
+    }
+
+    fn function(&mut self) -> AstNode {
+        let name = match self.eat(Kind::IdentifierLiteral, "Expected function name.") {
+            Ok(t) => t,
+            Err(()) => return AstNode::none(),
+        };
+
+        match self.eat(Kind::LeftParen, "Expected '(' after function declaration") {
+            Ok(_) => {}
+            Err(_) => {
+                self.synchronize();
+                return AstNode::none();
+            }
+        }
+
+        let parameters = match self.current.kind {
+            Kind::RightParen => vec![],
+            Kind::IdentifierLiteral => match self.parameter_list() {
+                Ok(list) => list,
+                Err(()) => {
+                    self.synchronize();
+                    return AstNode::none();
+                }
+            },
+            _ => {
+                self.error_at_current("Expected parameter list or ')'.");
+                self.synchronize();
+                return AstNode::none();
+            }
+        };
+
+        match self.eat(Kind::RightParen, "Expected ')' after formal parameter list") {
+            Ok(_) => {}
+            Err(_) => {
+                self.synchronize();
+                return AstNode::none();
+            }
+        }
+
+        let body = self.block_statement();
+        let span = Span::merge(vec![&name.span, &body.span]);
+
+        AstNode::new_statement(
+            Statement::FunDeclaration {
+                name,
+                parameters,
+                body: Box::new(body),
+            },
+            span,
+        )
+    }
+
     fn statement(&mut self) -> AstNode {
         match self.current.kind {
             Kind::Print => self.print_statement(),
@@ -117,6 +186,7 @@ impl Parser {
             Kind::If => self.if_statement(),
             Kind::While => self.while_statement(),
             Kind::For => self.for_statement(),
+            Kind::Return => self.return_statement(),
             _ => self.expression_statement(),
         }
     }
@@ -138,6 +208,29 @@ impl Parser {
                 AstNode::none()
             }
         }
+    }
+
+    fn return_statement(&mut self) -> AstNode {
+        let keyword = self.advance();
+
+        let (value, span) = match self.current.kind {
+            Kind::Semicolon => (None, keyword.span),
+            _ => {
+                let expr = self.expression();
+                let span = Span::merge(vec![&keyword.span, &expr.span]);
+                (Some(Box::new(expr)), span)
+            }
+        };
+
+        match self.eat(Kind::Semicolon, "Expected ';' after return statement.") {
+            Ok(_) => {}
+            Err(_) => {
+                self.synchronize();
+                return AstNode::none();
+            }
+        }
+
+        AstNode::new_statement(Statement::Return { value }, span)
     }
 
     fn for_statement(&mut self) -> AstNode {
@@ -457,8 +550,46 @@ impl Parser {
         }
     }
 
+    fn argument_list(&mut self) -> Vec<AstNode> {
+        let mut args = vec![];
+        args.push(self.expression());
+        while self.current.kind == Kind::Comma {
+            self.advance();
+            args.push(self.expression());
+        }
+
+        args
+    }
+
     fn call(&mut self) -> AstNode {
-        self.primary()
+        let primary = self.primary();
+
+        if self.current.kind == Kind::LeftParen {
+            self.advance();
+
+            let arguments = match self.current.kind {
+                Kind::RightParen => vec![],
+                _ => self.argument_list(),
+            };
+
+            let new_span = match self.eat(Kind::RightParen, "Expected ')' after argument list.") {
+                Ok(rparen) => Span::merge(vec![&primary.span, &rparen.span]),
+                Err(()) => {
+                    self.synchronize();
+                    return AstNode::none();
+                }
+            };
+
+            AstNode::new_expression(
+                Expression::Call {
+                    target: Box::new(primary),
+                    arguments: arguments,
+                },
+                new_span,
+            )
+        } else {
+            primary
+        }
     }
 
     fn primary(&mut self) -> AstNode {
@@ -593,6 +724,9 @@ impl Parser {
             match self.current.kind {
                 Kind::Semicolon | Kind::Eof => {
                     self.advance();
+                    break;
+                }
+                Kind::LeftBrace | Kind::RightBrace => {
                     break;
                 }
                 _ => {

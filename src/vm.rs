@@ -1,11 +1,13 @@
 use crate::error::RLoxError;
 use crate::executable::Executable;
+use crate::object::Obj;
+use crate::object::ObjFunction;
 use crate::object::ObjKind;
 use crate::opcode::OpCode;
 use crate::token::Span;
 use crate::value::Value;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::io::Write;
 
 #[derive(Debug)]
@@ -26,8 +28,8 @@ impl RLoxError for RuntimeError {
 #[derive(Debug)]
 pub struct VM {
     ip: usize,
-    bin: Executable,
-    stack: VecDeque<Value>,
+    base: usize,
+    stack: Vec<Value>,
     globals: HashMap<String, Value>,
 }
 
@@ -41,33 +43,31 @@ impl VM {
     pub fn new() -> Self {
         VM {
             ip: 0,
-            bin: Executable::new(String::new()),
-            stack: VecDeque::new(),
+            base: 0,
+            stack: Vec::new(),
             globals: HashMap::new(),
         }
     }
 
     pub fn interpret<W: Write>(
         &mut self,
-        bin: Executable,
+        function: &ObjFunction,
         output_stream: &mut W,
     ) -> Result<(), RuntimeError> {
-        self.ip = 0;
-        self.bin = bin;
-
-        loop {
+        while self.ip < function.bin.len() {
             if cfg!(feature = "disassemble") {
-                self.bin.disassemble_instruction(self.ip);
+                function.bin.disassemble_instruction(self.ip);
             }
 
-            match OpCode::from(self.read_u8()) {
+            match OpCode::from(self.read_u8(&function.bin)) {
                 OpCode::Constant => {
-                    let index = self.read_u8() as u16;
-                    self.push(self.bin.get_constant(index).clone());
+                    let index = self.read_u8(&function.bin) as u16;
+                    self.push(function.bin.get_constant(index).clone());
                 }
                 OpCode::LongConstant => {
-                    let index = (self.read_u8() * u8::max_value() + self.read_u8()) as u16;
-                    self.push(self.bin.get_constant(index).clone());
+                    let index = (self.read_u8(&function.bin) * u8::max_value()
+                        + self.read_u8(&function.bin)) as u16;
+                    self.push(function.bin.get_constant(index).clone());
                 }
                 OpCode::Negate => {
                     if self.peek(0).is_number() {
@@ -77,7 +77,7 @@ impl VM {
                     } else {
                         return Err(RuntimeError {
                             message: String::from("Cannot negate non-numeric types"),
-                            span: self.bin.spans[self.ip - 1],
+                            span: function.bin.spans[self.ip - 1],
                         });
                     }
                 }
@@ -90,7 +90,10 @@ impl VM {
                     self.pop();
                     self.push(value);
                 }
-                OpCode::Return => return Ok(()),
+                OpCode::Return => {
+                    self.stack[self.base] = self.peek(0).clone();
+                    return Ok(());
+                }
                 op @ OpCode::Add
                 | op @ OpCode::Subtract
                 | op @ OpCode::Multiply
@@ -99,7 +102,7 @@ impl VM {
                 | op @ OpCode::LessEqual
                 | op @ OpCode::Greater
                 | op @ OpCode::GreaterEqual
-                | op @ OpCode::Equal => match self.binary_op(&op) {
+                | op @ OpCode::Equal => match self.binary_op(&op, &function.bin) {
                     Ok(()) => {}
                     Err(e) => return Err(e),
                 },
@@ -108,15 +111,15 @@ impl VM {
                     output_stream.flush().unwrap();
                 }
                 OpCode::GetGlobal => {
-                    let index = self.read_u8() as u16;
-                    let name_arg = self.bin.get_constant(index).clone();
+                    let index = self.read_u8(&function.bin) as u16;
+                    let name_arg = function.bin.get_constant(index).clone();
                     if let Value::Obj(name, ObjKind::String) = name_arg {
                         let var_value = match self.globals.get(&*name.as_string().unwrap()) {
                             Some(value) => value.clone(),
                             None => {
                                 return Err(RuntimeError {
                                     message: format!("Attempted to get unknown global {}", name),
-                                    span: self.bin.spans[self.ip - 1],
+                                    span: function.bin.spans[self.ip - 1],
                                 })
                             }
                         };
@@ -126,15 +129,16 @@ impl VM {
                     }
                 }
                 OpCode::GetLongGlobal => {
-                    let index = (self.read_u8() * u8::max_value() + self.read_u8()) as u16;
-                    let name_arg = self.bin.get_constant(index).clone();
+                    let index = (self.read_u8(&function.bin) * u8::max_value()
+                        + self.read_u8(&function.bin)) as u16;
+                    let name_arg = function.bin.get_constant(index).clone();
                     if let Value::Obj(name, ObjKind::String) = name_arg {
                         let var_value = match self.globals.get(&*name.as_string().unwrap()) {
                             Some(value) => value.clone(),
                             None => {
                                 return Err(RuntimeError {
                                     message: format!("Attempted to get unknown global {}", name),
-                                    span: self.bin.spans[self.ip - 2],
+                                    span: function.bin.spans[self.ip - 2],
                                 })
                             }
                         };
@@ -144,8 +148,9 @@ impl VM {
                     }
                 }
                 OpCode::SetGlobal => {
-                    let index = self.read_u8() as u16;
-                    if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
+                    let index = self.read_u8(&function.bin) as u16;
+                    if let Value::Obj(name, ObjKind::String) =
+                        function.bin.get_constant(index).clone()
                     {
                         if self.globals.contains_key(&*name.as_string().unwrap()) {
                             self.globals
@@ -153,7 +158,7 @@ impl VM {
                         } else {
                             return Err(RuntimeError {
                                 message: format!("Assigned to set undeclared global {}", name),
-                                span: self.bin.spans[self.ip - 1],
+                                span: function.bin.spans[self.ip - 1],
                             });
                         }
                     } else {
@@ -161,8 +166,10 @@ impl VM {
                     }
                 }
                 OpCode::SetLongGlobal => {
-                    let index = (self.read_u8() * u8::max_value() + self.read_u8()) as u16;
-                    if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
+                    let index = (self.read_u8(&function.bin) * u8::max_value()
+                        + self.read_u8(&function.bin)) as u16;
+                    if let Value::Obj(name, ObjKind::String) =
+                        function.bin.get_constant(index).clone()
                     {
                         if self.globals.contains_key(&*name.as_string().unwrap()) {
                             self.globals
@@ -170,7 +177,7 @@ impl VM {
                         } else {
                             return Err(RuntimeError {
                                 message: format!("Assigned to set undeclared global {}", name),
-                                span: self.bin.spans[self.ip - 2],
+                                span: function.bin.spans[self.ip - 2],
                             });
                         }
                     } else {
@@ -181,8 +188,9 @@ impl VM {
                     }
                 }
                 OpCode::DeclareGlobal => {
-                    let index = self.read_u8() as u16;
-                    if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
+                    let index = self.read_u8(&function.bin) as u16;
+                    if let Value::Obj(name, ObjKind::String) =
+                        &function.bin.get_constant(index).clone()
                     {
                         self.globals
                             .insert(name.as_string().unwrap().clone(), Value::Nil);
@@ -194,8 +202,10 @@ impl VM {
                     }
                 }
                 OpCode::DeclareLongGlobal => {
-                    let index = (self.read_u8() * u8::max_value() + self.read_u8()) as u16;
-                    if let Value::Obj(name, ObjKind::String) = self.bin.get_constant(index).clone()
+                    let index = (self.read_u8(&function.bin) * u8::max_value()
+                        + self.read_u8(&function.bin)) as u16;
+                    if let Value::Obj(name, ObjKind::String) =
+                        &function.bin.get_constant(index).clone()
                     {
                         self.globals.insert(name.clone().to_string(), Value::Nil);
                     } else {
@@ -206,28 +216,46 @@ impl VM {
                     }
                 }
                 OpCode::GetLocal => {
-                    let index = self.read_u8() as usize;
-                    self.push(self.peek(index).clone());
+                    let index = self.read_u8(&function.bin) as usize;
+                    self.push(self.stack[self.base + index].clone());
                 }
                 OpCode::SetLocal => {
-                    let index = self.read_u8() as usize;
+                    let index = self.read_u8(&function.bin) as usize;
                     let stack_len = self.stack.len();
                     self.stack[stack_len - 2 - index] = self.peek(0).clone();
                 }
                 OpCode::Jump => {
-                    let destination = self.read_u16();
+                    let destination = self.read_u16(&function.bin);
                     self.ip = destination as usize;
                 }
                 OpCode::JumpIfTrue => {
-                    let destination = self.read_u16();
+                    let destination = self.read_u16(&function.bin);
                     if self.peek(0).is_truthy() {
                         self.ip = destination as usize;
                     }
                 }
                 OpCode::JumpIfFalse => {
-                    let destination = self.read_u16();
+                    let destination = self.read_u16(&function.bin);
                     if !self.peek(0).is_truthy() {
                         self.ip = destination as usize;
+                    }
+                }
+                OpCode::Call => {
+                    let arg_count = self.read_u8(&function.bin);
+                    let callable = self.peek(arg_count as usize).clone();
+
+                    match callable {
+                        Value::Obj(function, ObjKind::Function) => {
+                            if let Obj::Function(f) = &*function {
+                                self.call(f, arg_count, output_stream)?;
+                            }
+                        }
+                        _ => {
+                            return Err(RuntimeError {
+                                message: format!("Cannot call {}", callable),
+                                span: function.bin.spans[self.ip - 1],
+                            });
+                        }
                     }
                 }
             }
@@ -237,9 +265,43 @@ impl VM {
                 writeln!(output_stream).unwrap();
             }
         }
+
+        Ok(())
     }
 
-    fn binary_op(&mut self, op: &OpCode) -> Result<(), RuntimeError> {
+    fn call<W: Write>(
+        &mut self,
+        function: &ObjFunction,
+        arg_count: u8,
+        output_stream: &mut W,
+    ) -> Result<(), RuntimeError> {
+        // Save the current IP and base to restore after returning
+        let ip_backup = self.ip;
+        let base_backup = self.base;
+
+        // The arguments should already be on the stack.
+        // Adjust the base pointer to point at their start
+        self.base = self.stack.len() - arg_count as usize;
+
+        // Execution should begin at the beginning of the function
+        self.ip = 0;
+
+        // Run the function
+        self.interpret(function, output_stream)?;
+
+        // Remove everything from the stack except the return value
+        for _ in (self.base + 1)..self.stack.len() {
+            self.pop();
+        }
+
+        // Restore the ip and the base
+        self.ip = ip_backup;
+        self.base = base_backup;
+
+        Ok(())
+    }
+
+    fn binary_op(&mut self, op: &OpCode, bin: &Executable) -> Result<(), RuntimeError> {
         let right = self.peek(0).clone();
         let left = self.peek(1).clone();
 
@@ -255,7 +317,7 @@ impl VM {
                 if !left.is_number() || !right.is_number() {
                     return Err(RuntimeError {
                         message: format!("Cannot apply {:?} to non-numeric types", op),
-                        span: self.bin.spans[self.ip - 1],
+                        span: bin.spans[self.ip - 1],
                     });
                 }
             }
@@ -265,7 +327,7 @@ impl VM {
                     _ => {
                         return Err(RuntimeError {
                             message: String::from("Cannot apply '+' to Number and Non-Number"),
-                            span: self.bin.spans[self.ip - 1],
+                            span: bin.spans[self.ip - 1],
                         });
                     }
                 },
@@ -274,14 +336,14 @@ impl VM {
                     _ => {
                         return Err(RuntimeError {
                             message: String::from("Cannot apply '+' to String and Non-String"),
-                            span: self.bin.spans[self.ip - 1],
+                            span: bin.spans[self.ip - 1],
                         });
                     }
                 },
                 _ => {
                     return Err(RuntimeError {
                         message: String::from("Cannot apply '+' to non-numeric or non-string type"),
-                        span: self.bin.spans[self.ip - 1],
+                        span: bin.spans[self.ip - 1],
                     });
                 }
             },
@@ -306,35 +368,29 @@ impl VM {
         Ok(())
     }
 
-    fn read_u8(&mut self) -> u8 {
-        if self.ip >= self.bin.len() {
-            panic!(
-                "read_u8 out of bounds. bin: {}, ip: {}",
-                self.bin.name, self.ip
-            );
+    fn read_u8(&mut self, bin: &Executable) -> u8 {
+        if self.ip >= bin.len() {
+            panic!("read_u8 out of bounds. bin: {}, ip: {}", bin.name, self.ip);
         }
         self.ip += 1;
-        self.bin.read_u8(self.ip - 1)
+        bin.read_u8(self.ip - 1)
     }
 
-    fn read_u16(&mut self) -> u16 {
-        if self.ip >= self.bin.len() {
-            panic!(
-                "read_u16 out of bounds. bin: {}, ip: {}",
-                self.bin.name, self.ip
-            );
+    fn read_u16(&mut self, bin: &Executable) -> u16 {
+        if self.ip >= bin.len() {
+            panic!("read_u16 out of bounds. bin: {}, ip: {}", bin.name, self.ip);
         }
 
         self.ip += 2;
-        self.bin.read_u16(self.ip - 2)
+        bin.read_u16(self.ip - 2)
     }
 
     fn push(&mut self, value: Value) {
-        self.stack.push_back(value);
+        self.stack.push(value);
     }
 
     fn pop(&mut self) -> Value {
-        self.stack.pop_back().expect("Popped an empty stack")
+        self.stack.pop().expect("Popped an empty stack")
     }
 
     fn peek(&self, distance: usize) -> &Value {
@@ -343,8 +399,11 @@ impl VM {
 
     fn print_stack<W: Write>(&self, output_stream: &mut W) {
         write!(output_stream, " Stack: ").unwrap();
-        for v in &self.stack {
-            write!(output_stream, "[{:?}] ", v).unwrap();
+        for (index, value) in self.stack.iter().enumerate() {
+            if index == self.base {
+                write!(output_stream, ">< ").unwrap();
+            }
+            write!(output_stream, "[{:?}] ", value).unwrap();
         }
         writeln!(output_stream).unwrap();
     }

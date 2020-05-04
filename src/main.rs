@@ -23,19 +23,20 @@ fn run(source: String, vm: &mut VM) {
     };
 
     // Compile
-    let binary = match compiler::compile(ast) {
+    let script = match compiler::compile(ast) {
         Ok(bin) => bin,
         Err(e) => {
             reporter.report(&e);
             return;
         }
     };
+
     if cfg!(feature = "disassemble") {
-        binary.dump();
+        script.bin.dump();
     }
 
     // Execute
-    match vm.interpret(binary, &mut std::io::stdout()) {
+    match vm.interpret(&script, &mut std::io::stdout()) {
         Ok(_) => {}
         Err(e) => {
             reporter.report(&e);

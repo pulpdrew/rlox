@@ -1,15 +1,26 @@
-use crate::object::{Obj, ObjKind};
+use crate::object::{Obj, ObjFunction, ObjKind};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops;
 use std::rc::Rc;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Value {
     Number(f64),
     Bool(bool),
     Nil,
     Obj(Rc<Obj>, ObjKind),
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Number(n) => write!(f, "Number({})", n),
+            Value::Bool(b) => write!(f, "Bool({})", b),
+            Value::Nil => write!(f, "Nil",),
+            Value::Obj(o, _) => write!(f, "{:?}", o),
+        }
+    }
 }
 
 impl Value {
@@ -203,5 +214,11 @@ impl From<String> for Value {
 impl From<&str> for Value {
     fn from(string: &str) -> Self {
         Value::Obj(Rc::new(Obj::from(string)), ObjKind::String)
+    }
+}
+
+impl From<ObjFunction> for Value {
+    fn from(func: ObjFunction) -> Self {
+        Value::Obj(Rc::new(Obj::from(func)), ObjKind::Function)
     }
 }
