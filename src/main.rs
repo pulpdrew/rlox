@@ -10,10 +10,10 @@ use std::io::{self, Write};
 
 fn run(source: String, vm: &mut VM) {
     let mut stderr = std::io::stderr();
-    let mut reporter = ErrorReporter::new(source.clone(), &mut stderr);
+    let mut reporter = ErrorReporter::new(&source, &mut stderr);
 
     // Parse
-    let mut parser = Parser::new(source);
+    let mut parser = Parser::new(&source);
     let ast = match parser.parse_program() {
         Ok(ast) => ast,
         Err(errors) => {

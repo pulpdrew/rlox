@@ -34,10 +34,10 @@ pub fn run(source: String) -> (Output, Output) {
     let mut stdout = Output::new();
     let mut stderr = Output::new();
 
-    let mut reporter = ErrorReporter::new(source.clone(), &mut stderr);
+    let mut reporter = ErrorReporter::new(&source, &mut stderr);
 
     // Parse
-    let mut parser = Parser::new(source.clone());
+    let mut parser = Parser::new(&source);
     let ast = match parser.parse_program() {
         Ok(ast) => ast,
         Err(errors) => {

@@ -2,11 +2,14 @@ use crate::token::Span;
 use std::cmp;
 use std::io::Write;
 
-pub trait RLoxError {
+/// The error trait required on any input to `ErrorReporter`.
+pub trait ReportableError {
     fn span(&self) -> Span;
     fn message(&self) -> String;
 }
 
+/// Reports errors by writing to a stream with the `Write` Trait
+/// and outputing bits of source code for context.
 #[derive(Debug)]
 pub struct ErrorReporter<'a, W: Write> {
     source: String,
@@ -14,18 +17,23 @@ pub struct ErrorReporter<'a, W: Write> {
 }
 
 impl<'a, W: 'a + Write> ErrorReporter<'a, W> {
-    pub fn new(source: String, error_stream: &'a mut W) -> Self {
+    /// Create a and return a new `ErrorReporter` that outputs portions of `source`
+    /// to the given `Write` stream.
+    pub fn new(source: &str, error_stream: &'a mut W) -> Self {
         ErrorReporter {
-            source,
+            source: source.to_string(),
             error_stream,
         }
     }
 
-    pub fn report<E: RLoxError>(&mut self, error: &E) {
+    /// Report an error. This outputs the message from `error` and the relevent bits of source code.
+    pub fn report<E: ReportableError>(&mut self, error: &E) {
         writeln!(self.error_stream, "{}", error.message()).unwrap();
         Self::print_underlined_source(&self.source, self.error_stream, &error.span());
     }
 
+    /// Print the portion of `source` that is indicated by `span` to `error_stream`, underlined.
+    /// Also print all lines that contain any underlined `source`.
     fn print_underlined_source<T: Write>(source: &str, error_stream: &mut T, span: &Span) {
         let mut line_start: usize = 0;
         let mut line_num: usize = 1;
@@ -46,6 +54,8 @@ impl<'a, W: 'a + Write> ErrorReporter<'a, W> {
         }
     }
 
+    /// Print the given `line` to `error_stream`, decorated by the `line_num` and underlined
+    /// from index `start` to `end`.
     fn print_underlined<T: Write>(
         error_stream: &mut T,
         line: &str,

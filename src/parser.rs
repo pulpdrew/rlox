@@ -1,5 +1,5 @@
 use crate::ast::{AstNode, Expression, Statement};
-use crate::error::RLoxError;
+use crate::error::ReportableError;
 use crate::scanner::Scanner;
 use crate::token::{Kind, Span, Token};
 use crate::value::Value;
@@ -9,7 +9,7 @@ pub struct ParsingError {
     span: Span,
 }
 
-impl RLoxError for ParsingError {
+impl ReportableError for ParsingError {
     fn span(&self) -> Span {
         self.span
     }
@@ -28,8 +28,8 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(source: String) -> Self {
-        let mut scanner = Scanner::new(source);
+    pub fn new(source: &str) -> Self {
+        let mut scanner = Scanner::new(&source);
         let current = scanner.next().unwrap();
         let next = scanner.next().unwrap();
         Parser {
@@ -583,7 +583,7 @@ impl Parser {
             AstNode::new_expression(
                 Expression::Call {
                     target: Box::new(primary),
-                    arguments: arguments,
+                    arguments,
                 },
                 new_span,
             )

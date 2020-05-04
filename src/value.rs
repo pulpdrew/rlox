@@ -4,6 +4,8 @@ use std::fmt;
 use std::ops;
 use std::rc::Rc;
 
+/// A value is anything that can be put on the VM's stack
+/// or listed in the executable's constant table
 #[derive(Clone)]
 pub enum Value {
     Number(f64),
@@ -23,7 +25,19 @@ impl fmt::Debug for Value {
     }
 }
 
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Nil => write!(f, "nil"),
+            Value::Bool(b) => write!(f, "{}", b),
+            Value::Number(n) => write!(f, "{}", n),
+            Value::Obj(o, ..) => write!(f, "{}", o),
+        }
+    }
+}
+
 impl Value {
+    /// Indicates whether the Value is a `Number` variant
     pub fn is_number(&self) -> bool {
         if let Value::Number(..) = self {
             true
@@ -32,6 +46,7 @@ impl Value {
         }
     }
 
+    /// Indicates whether the Value is a `Bool` variant
     pub fn is_bool(&self) -> bool {
         if let Value::Bool(..) = self {
             true
@@ -40,6 +55,7 @@ impl Value {
         }
     }
 
+    /// Indicates whether the Value is a `Nil` variant
     pub fn is_nil(&self) -> bool {
         if let Value::Nil = self {
             true
@@ -48,6 +64,7 @@ impl Value {
         }
     }
 
+    /// Indicates whether the Value is a `Obj` variant
     pub fn is_obj(&self) -> bool {
         if let Value::Obj(..) = self {
             true
@@ -56,6 +73,7 @@ impl Value {
         }
     }
 
+    /// Indicates whether the Value is 'Truthy' according to the rules of the language
     pub fn is_truthy(&self) -> bool {
         match self {
             Value::Bool(b) => *b,
@@ -66,6 +84,7 @@ impl Value {
     }
 }
 
+/// Overloads the `+` operator for Values. Only `Number` and `String` variants can be added.
 impl ops::Add for Value {
     type Output = Value;
 
@@ -88,6 +107,7 @@ impl ops::Add for Value {
     }
 }
 
+/// Overloads the `-` operator for Values. Only `Number` variants can be subtracted.
 impl ops::Sub for Value {
     type Output = Value;
 
@@ -104,6 +124,7 @@ impl ops::Sub for Value {
     }
 }
 
+/// Overloads the `*` operator for Values. Only `Number` variants can be multiplied.
 impl ops::Mul for Value {
     type Output = Value;
 
@@ -120,6 +141,7 @@ impl ops::Mul for Value {
     }
 }
 
+/// Overloads the `/` operator for Values. Only `Number` variants can be divided.
 impl ops::Div for Value {
     type Output = Value;
 
@@ -136,6 +158,7 @@ impl ops::Div for Value {
     }
 }
 
+/// Overloads the unary `-` operator for Values. Only `Number` variants can be negated.
 impl ops::Neg for Value {
     type Output = Value;
 
@@ -148,6 +171,7 @@ impl ops::Neg for Value {
     }
 }
 
+/// Overloads the `==` operator for Values.
 impl PartialEq for Value {
     fn eq(&self, other: &Value) -> bool {
         match self {
@@ -162,6 +186,7 @@ impl PartialEq for Value {
     }
 }
 
+/// Compares Values, if they are `Number` types
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Value) -> Option<Ordering> {
         if self == other {
@@ -178,17 +203,6 @@ impl PartialOrd for Value {
             }
         } else {
             None
-        }
-    }
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Nil => write!(f, "nil"),
-            Value::Bool(b) => write!(f, "{}", b),
-            Value::Number(n) => write!(f, "{}", n),
-            Value::Obj(o, ..) => write!(f, "{}", o),
         }
     }
 }

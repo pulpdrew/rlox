@@ -1,5 +1,5 @@
 use crate::ast::{AstNode, Expression, Statement};
-use crate::error::RLoxError;
+use crate::error::ReportableError;
 use crate::executable::Executable;
 use crate::object::{Obj, ObjFunction};
 use crate::opcode::OpCode;
@@ -12,7 +12,7 @@ pub struct CompilationError {
     span: Span,
 }
 
-impl RLoxError for CompilationError {
+impl ReportableError for CompilationError {
     fn span(&self) -> Span {
         self.span
     }

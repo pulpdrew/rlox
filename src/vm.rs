@@ -1,4 +1,4 @@
-use crate::error::RLoxError;
+use crate::error::ReportableError;
 use crate::executable::Executable;
 use crate::object::Obj;
 use crate::object::ObjFunction;
@@ -16,7 +16,7 @@ pub struct RuntimeError {
     span: Span,
 }
 
-impl RLoxError for RuntimeError {
+impl ReportableError for RuntimeError {
     fn span(&self) -> Span {
         self.span
     }

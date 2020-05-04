@@ -2,6 +2,8 @@ use crate::token::Kind;
 use crate::token::{Span, Token};
 use std::collections::VecDeque;
 
+/// A Scanner is an iterator over source code that returns
+/// the `Token`s in the source code, in order.
 #[derive(Debug)]
 pub struct Scanner {
     characters: VecDeque<char>,
@@ -11,6 +13,8 @@ pub struct Scanner {
 
 impl Iterator for Scanner {
     type Item = Token;
+
+    /// Return the next `Token` in the source code
     fn next(&mut self) -> Option<Self::Item> {
         self.consume_whitespace();
 
@@ -49,23 +53,27 @@ impl Iterator for Scanner {
 }
 
 impl Scanner {
-    pub fn new(source: String) -> Self {
+    /// Create and return a new Scanner that operators on the given `source`
+    pub fn new(source: &str) -> Self {
         Scanner {
-            characters: source.chars().collect(),
+            characters: source.to_string().chars().collect(),
             line: 1,
             index: 0,
         }
     }
 
+    /// Consume and return the character from the front of `self.characters`.
     fn advance(&mut self) -> Option<char> {
         self.index += 1;
         self.characters.pop_front()
     }
 
+    /// Peek at the character `count` characters from the beginning of `self.characters`.
     fn peek(&self, count: usize) -> Option<&char> {
         self.characters.get(count)
     }
 
+    /// Consumes an identifier or keyword and makes a Token.
     fn identifier_literal(&mut self) -> Option<Token> {
         let mut length = 1;
         while is_digit(self.peek(length)) || is_alpha_or_under(self.peek(length)) {
@@ -103,6 +111,7 @@ impl Scanner {
         self.make_token(kind, length)
     }
 
+    /// Consumes a number literal and makes a Token
     fn number_literal(&mut self) -> Option<Token> {
         let mut length = 1;
         while is_digit(self.peek(length)) {
@@ -119,6 +128,7 @@ impl Scanner {
         self.make_token(Kind::NumberLiteral, length)
     }
 
+    /// Consumes a string literal and makes a Token
     fn string_literal(&mut self) -> Option<Token> {
         let mut length = 1;
         while self.peek(length) != Some(&'"') && length <= self.characters.len() {
@@ -132,6 +142,7 @@ impl Scanner {
         }
     }
 
+    /// Makes a token of the given `kind` out of the first `count` characters in `self.characters`.
     fn make_token(&mut self, kind: Kind, count: usize) -> Option<Token> {
         let span = match kind {
             Kind::Eof => Span::new(self.index, self.index + 1),
@@ -144,6 +155,7 @@ impl Scanner {
         })
     }
 
+    /// Indicates whether thte prefix of `self.characters` matches the given prefix.
     fn starts_with(&self, prefix: &str) -> bool {
         for (i, ch) in prefix.char_indices() {
             if self.peek(i) != Some(&ch) {
@@ -153,6 +165,7 @@ impl Scanner {
         true
     }
 
+    /// Advances `count` times, yielding a String from the consumed characters
     fn read_front(&mut self, count: usize) -> String {
         let mut front = String::new();
 
@@ -165,6 +178,7 @@ impl Scanner {
         front
     }
 
+    /// Advances past any whitespace or comments.
     fn consume_whitespace(&mut self) {
         loop {
             match self.peek(0) {
@@ -289,7 +303,7 @@ mod tests {
                 print \"hey   \"
         ";
 
-        let mut scanner = scanner::Scanner::new(String::from(source));
+        let mut scanner = scanner::Scanner::new(&source);
         assert_eq!(scanner.next().unwrap().kind, Kind::While);
         assert_eq!(scanner.next().unwrap().kind, Kind::LeftParen);
         assert_eq!(scanner.next().unwrap().kind, Kind::True);
@@ -300,7 +314,7 @@ mod tests {
 
     #[test]
     fn empty_file() {
-        let mut scanner = scanner::Scanner::new(String::new());
+        let mut scanner = scanner::Scanner::new("");
         assert_eq!(scanner.next().unwrap().kind, Kind::Eof);
     }
 
@@ -313,14 +327,14 @@ long_id // This is a comment
         "
         .trim();
 
-        let mut scanner = scanner::Scanner::new(String::from(source));
+        let mut scanner = scanner::Scanner::new(&source);
         assert_eq!(scanner.next().unwrap().span, Span::new(0, 7));
         assert_eq!(scanner.next().unwrap().span, Span::new(30, 38));
         assert_eq!(scanner.next().unwrap().span, Span::new(38, 39));
     }
 
     fn single_token_test(source: String, expected_kind: Kind) {
-        let mut scanner = scanner::Scanner::new(source.clone());
+        let mut scanner = scanner::Scanner::new(&source);
         let token = scanner.next();
 
         assert_eq!(token.as_ref().unwrap().kind, expected_kind);

@@ -1,6 +1,7 @@
 use crate::token::{Span, Token};
 use crate::value::Value;
 
+/// Contains either an expression or a statement node, tagged with a Span `span`
 #[derive(Debug)]
 pub struct AstNode {
     pub span: Span,
@@ -9,6 +10,7 @@ pub struct AstNode {
 }
 
 impl AstNode {
+    /// Create and return a new AstNode with the given `statement` and `span`
     pub fn new_statement(statement: Statement, span: Span) -> Self {
         AstNode {
             span,
@@ -16,6 +18,7 @@ impl AstNode {
             statement: Some(Box::new(statement)),
         }
     }
+    /// Create and return a new AstNode with the given `expression` and `span`
     pub fn new_expression(expression: Expression, span: Span) -> Self {
         AstNode {
             span,
@@ -23,6 +26,8 @@ impl AstNode {
             statement: None,
         }
     }
+    /// Create and return a new AstNode by copying the given `node` and tagging it
+    /// with the given `span`
     pub fn new_ast_node(node: AstNode, span: Span) -> Self {
         AstNode {
             span,
@@ -30,6 +35,8 @@ impl AstNode {
             statement: node.statement,
         }
     }
+    /// Create and return a new AstNode that is neither an expression or statement,
+    /// representing an empty/invalid AstNode
     pub fn none() -> Self {
         AstNode {
             span: Span::new(0, 0),
@@ -37,11 +44,13 @@ impl AstNode {
             statement: None,
         }
     }
+    /// Get a reference to this node's expression. Panics if there is no expression.
     pub fn expression(&self) -> &Expression {
         self.expression
             .as_ref()
             .expect("Failed to unwrap expression.")
     }
+    /// Get a reference to this node's statement. Panics if there is no statement.
     pub fn statement(&self) -> &Statement {
         self.statement
             .as_ref()
