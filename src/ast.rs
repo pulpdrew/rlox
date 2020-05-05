@@ -100,7 +100,6 @@ pub enum Statement {
     },
     Declaration {
         name: String,
-        operator: Option<Token>,
         initializer: Option<Box<AstNode>>,
     },
     Block {
