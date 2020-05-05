@@ -3,6 +3,7 @@ use crate::error::ReportableError;
 use crate::scanner::Scanner;
 use crate::token::{Kind, Span, Token};
 use crate::value::Value;
+
 #[derive(Debug)]
 pub struct ParsingError {
     message: String,
@@ -41,6 +42,7 @@ impl Parser {
         }
     }
 
+    /// Parse the source into a program - a list of declaratation `AstNode`s
     pub fn parse_program(&mut self) -> Result<Vec<AstNode>, Vec<ParsingError>> {
         let mut program = vec![];
         while self.current.kind != Kind::Eof {
@@ -107,10 +109,7 @@ impl Parser {
                 let span = Span::merge(vec![&node.span, &semi.span]);
                 AstNode::new_ast_node(node, span)
             }
-            Err(_) => {
-                self.synchronize();
-                AstNode::none()
-            }
+            Err(_) => AstNode::none(),
         }
     }
 
@@ -136,20 +135,14 @@ impl Parser {
 
         match self.eat(Kind::LeftParen, "Expected '(' after function declaration") {
             Ok(_) => {}
-            Err(_) => {
-                self.synchronize();
-                return AstNode::none();
-            }
+            Err(_) => return AstNode::none(),
         }
 
         let parameters = match self.current.kind {
             Kind::RightParen => vec![],
             Kind::IdentifierLiteral => match self.parameter_list() {
                 Ok(list) => list,
-                Err(()) => {
-                    self.synchronize();
-                    return AstNode::none();
-                }
+                Err(()) => return AstNode::none(),
             },
             _ => {
                 self.error_at_current("Expected parameter list or ')'.");
@@ -160,10 +153,7 @@ impl Parser {
 
         match self.eat(Kind::RightParen, "Expected ')' after formal parameter list") {
             Ok(_) => {}
-            Err(_) => {
-                self.synchronize();
-                return AstNode::none();
-            }
+            Err(_) => return AstNode::none(),
         }
 
         let body = self.block_statement();
@@ -203,10 +193,7 @@ impl Parser {
                     new_span,
                 )
             }
-            Err(_) => {
-                self.synchronize();
-                AstNode::none()
-            }
+            Err(_) => AstNode::none(),
         }
     }
 
@@ -224,10 +211,7 @@ impl Parser {
 
         match self.eat(Kind::Semicolon, "Expected ';' after return statement.") {
             Ok(_) => {}
-            Err(_) => {
-                self.synchronize();
-                return AstNode::none();
-            }
+            Err(_) => return AstNode::none(),
         }
 
         AstNode::new_statement(Statement::Return { value }, span)
@@ -237,10 +221,7 @@ impl Parser {
         let keyword = self.advance();
         match self.eat(Kind::LeftParen, "Expected '(' after 'for.'") {
             Ok(_) => {}
-            Err(_) => {
-                self.synchronize();
-                return AstNode::none();
-            }
+            Err(_) => return AstNode::none(),
         }
 
         let initializer = match self.current.kind {
@@ -259,10 +240,7 @@ impl Parser {
 
         match self.eat(Kind::Semicolon, "Expected ';' after for condition.") {
             Ok(_) => {}
-            Err(_) => {
-                self.synchronize();
-                return AstNode::none();
-            }
+            Err(_) => return AstNode::none(),
         }
 
         let update = match self.current.kind {
@@ -272,10 +250,7 @@ impl Parser {
 
         match self.eat(Kind::RightParen, "Expected ')' before for block.") {
             Ok(_) => {}
-            Err(_) => {
-                self.synchronize();
-                return AstNode::none();
-            }
+            Err(_) => return AstNode::none(),
         }
 
         let block = self.statement();
@@ -296,20 +271,14 @@ impl Parser {
         let keyword = self.advance();
         match self.eat(Kind::LeftParen, "Expected '(' after 'while.'") {
             Ok(_) => {}
-            Err(_) => {
-                self.synchronize();
-                return AstNode::none();
-            }
+            Err(_) => return AstNode::none(),
         }
 
         let condition = self.expression();
 
         match self.eat(Kind::RightParen, "Expected ')' after while condition.") {
             Ok(_) => {}
-            Err(_) => {
-                self.synchronize();
-                return AstNode::none();
-            }
+            Err(_) => return AstNode::none(),
         }
 
         let block = self.statement();
@@ -329,7 +298,6 @@ impl Parser {
         match self.eat(Kind::LeftParen, "Expected '(' after 'if.'") {
             Ok(_) => {}
             Err(_) => {
-                self.synchronize();
                 return AstNode::none();
             }
         }
@@ -339,7 +307,6 @@ impl Parser {
         match self.eat(Kind::RightParen, "Expected ')' after if condition.") {
             Ok(_) => {}
             Err(_) => {
-                self.synchronize();
                 return AstNode::none();
             }
         }
@@ -388,10 +355,7 @@ impl Parser {
                     new_span,
                 )
             }
-            Err(_) => {
-                self.synchronize();
-                AstNode::none()
-            }
+            Err(_) => AstNode::none(),
         }
     }
 
@@ -409,10 +373,7 @@ impl Parser {
                     new_span,
                 )
             }
-            Err(_) => {
-                self.synchronize();
-                AstNode::none()
-            }
+            Err(_) => AstNode::none(),
         }
     }
 
@@ -574,10 +535,7 @@ impl Parser {
 
             let new_span = match self.eat(Kind::RightParen, "Expected ')' after argument list.") {
                 Ok(rparen) => Span::merge(vec![&primary.span, &rparen.span]),
-                Err(()) => {
-                    self.synchronize();
-                    return AstNode::none();
-                }
+                Err(()) => return AstNode::none(),
             };
 
             AstNode::new_expression(
@@ -692,6 +650,7 @@ impl Parser {
         if self.current.kind == kind {
             Ok(self.advance())
         } else {
+            self.synchronize();
             self.error_at_current(message);
             Err(())
         }
@@ -719,6 +678,7 @@ impl Parser {
         });
     }
 
+    /// Consume tokens until current is '{', '}', or the token after a ';'
     fn synchronize(&mut self) {
         loop {
             match self.current.kind {
