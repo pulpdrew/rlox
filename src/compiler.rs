@@ -3,7 +3,7 @@ use crate::error::ReportableError;
 use crate::executable::Executable;
 use crate::object::{Obj, ObjFunction};
 use crate::opcode::OpCode;
-use crate::token::{Kind, Span, Token};
+use crate::token::{Kind, Span};
 use crate::value::Value;
 
 #[derive(Debug)]
@@ -30,7 +30,7 @@ pub struct Compiler {
 
 #[derive(Debug)]
 struct Local {
-    name: Token,
+    name: String,
     depth: usize,
 }
 
@@ -84,7 +84,7 @@ impl Compiler {
             Statement::Declaration {
                 name, initializer, ..
             } => {
-                let name_value = Value::from(name.string.clone());
+                let name_value = Value::from(name.clone());
 
                 // Leave the initial value of the variable on the top of the stack
                 if let Some(init_expression) = initializer {
@@ -105,8 +105,8 @@ impl Compiler {
                     if let Some(local) = self.resolve_local(name) {
                         if local.0.depth == self.scope_depth {
                             return Err(CompilationError {
-                                message: format!("Redeclaration of local variable {}", name.string),
-                                span: name.span,
+                                message: format!("Redeclaration of local variable {}", name),
+                                span: statement_node.span,
                             });
                         }
                     }
@@ -241,16 +241,21 @@ impl Compiler {
                 let mut locals_backup: Vec<Local> = self.locals.drain(0..).collect();
                 self.begin_scope();
 
-                let span = Span::merge(vec![&name.span, &body.span]);
-
                 for param in parameters.iter() {
-                    self.locals.push(Local {
-                        name: param.clone(),
-                        depth: self.scope_depth,
-                    });
+                    if let Kind::IdentifierLiteral(param_name) = &param.kind {
+                        self.locals.push(Local {
+                            name: param_name.clone(),
+                            depth: self.scope_depth,
+                        });
+                    } else {
+                        return Err(CompilationError {
+                            message: "Expected parameter name to be IdentifierLiteral".to_string(),
+                            span: param.span,
+                        });
+                    }
                 }
 
-                let mut function_binary = Executable::new(name.string.clone());
+                let mut function_binary = Executable::new(name.clone());
                 self.compile_statement(&mut function_binary, body)?;
                 function_binary.push_constant_inst(
                     OpCode::Constant,
@@ -267,22 +272,22 @@ impl Compiler {
 
                 // Put the function object on the top of the stack
                 let value = Value::from(ObjFunction {
-                    name: Box::new(Obj::from(name.string.clone())),
+                    name: Box::new(Obj::from(name.clone())),
                     arity: parameters.len() as u8,
                     bin: function_binary,
                 });
-                bin.push_constant_inst(OpCode::Constant, value, span);
+                bin.push_constant_inst(OpCode::Constant, value, statement_node.span);
 
                 // Assign the function to the variable of the matching name
-                let name_value = Value::from(name.string.clone());
+                let name_value = Value::from(name.clone());
                 if self.scope_depth == 0 {
                     bin.push_constant_inst(
                         OpCode::DeclareGlobal,
                         name_value.clone(),
                         statement_node.span,
                     );
-                    bin.push_constant_inst(OpCode::SetGlobal, name_value, span);
-                    bin.push_opcode(OpCode::Pop, span);
+                    bin.push_constant_inst(OpCode::SetGlobal, name_value, statement_node.span);
+                    bin.push_opcode(OpCode::Pop, statement_node.span);
                 } else {
                     self.locals.push(Local {
                         name: name.clone(),
@@ -313,8 +318,8 @@ impl Compiler {
         expression_node: &AstNode,
     ) -> Result<(), CompilationError> {
         match expression_node.expression() {
-            Expression::Constant { value, literal } => {
-                bin.push_constant_inst(OpCode::Constant, value.clone(), literal.span);
+            Expression::Constant { value } => {
+                bin.push_constant_inst(OpCode::Constant, value.clone(), expression_node.span);
             }
             Expression::Unary {
                 operator,
@@ -368,11 +373,11 @@ impl Compiler {
                     self.compile_expression(bin, rvalue)?;
                     match self.resolve_local(name) {
                         Some((_, index)) => {
-                            bin.push_opcode(OpCode::SetLocal, name.span);
-                            bin.push_u8(index as u8, name.span);
+                            bin.push_opcode(OpCode::SetLocal, lvalue.span);
+                            bin.push_u8(index as u8, lvalue.span);
                         }
                         None => {
-                            let name_value = Value::from(name.string.clone());
+                            let name_value = Value::from(name.clone());
                             bin.push_constant_inst(
                                 OpCode::SetGlobal,
                                 name_value,
@@ -389,12 +394,12 @@ impl Compiler {
             }
             Expression::Variable { name } => match self.resolve_local(name) {
                 Some((_, index)) => {
-                    bin.push_opcode(OpCode::GetLocal, name.span);
-                    bin.push_u8(index as u8, name.span);
+                    bin.push_opcode(OpCode::GetLocal, expression_node.span);
+                    bin.push_u8(index as u8, expression_node.span);
                 }
                 None => {
-                    let name_value = Value::from(name.string.clone());
-                    bin.push_constant_inst(OpCode::GetGlobal, name_value, name.span);
+                    let name_value = Value::from(name.clone());
+                    bin.push_constant_inst(OpCode::GetGlobal, name_value, expression_node.span);
                 }
             },
             Expression::Call { target, arguments } => {
@@ -410,9 +415,9 @@ impl Compiler {
         Ok(())
     }
 
-    fn resolve_local(&self, name: &Token) -> Option<(&Local, usize)> {
+    fn resolve_local(&self, name: &str) -> Option<(&Local, usize)> {
         for (index, local) in self.locals.iter().rev().enumerate() {
-            if local.name.string == name.string {
+            if local.name == name {
                 return Some((&local, self.locals.len() - index - 1));
             }
         }

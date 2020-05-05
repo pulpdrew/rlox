@@ -5,11 +5,10 @@ use std::cmp;
 pub struct Token {
     pub kind: Kind,
     pub span: Span,
-    pub string: String,
 }
 
 /// A logical classification of a `Token`
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Kind {
     LeftBrace,
     RightBrace,
@@ -32,9 +31,9 @@ pub enum Kind {
     Less,
     LessEqual,
 
-    IdentifierLiteral,
-    StringLiteral,
-    NumberLiteral,
+    IdentifierLiteral(String),
+    StringLiteral(String),
+    NumberLiteral(f64),
 
     And,
     Or,
@@ -54,7 +53,7 @@ pub enum Kind {
     This,
 
     Eof,
-    Error,
+    Error(String),
 }
 
 /// A region of source code with a start and an end

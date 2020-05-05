@@ -18,7 +18,7 @@ impl Iterator for Scanner {
     fn next(&mut self) -> Option<Self::Item> {
         self.consume_whitespace();
 
-        match self.peek(0) {
+        Some(match self.peek(0) {
             Some(ch) => match ch {
                 '{' => self.make_token(Kind::LeftBrace, 1),
                 '}' => self.make_token(Kind::RightBrace, 1),
@@ -45,10 +45,10 @@ impl Iterator for Scanner {
                 '0'..='9' => self.number_literal(),
                 '"' => self.string_literal(),
 
-                _ => self.make_token(Kind::Error, 1),
+                _ => self.make_error_token(1),
             },
             None => self.make_token(Kind::Eof, 0),
-        }
+        })
     }
 }
 
@@ -74,45 +74,46 @@ impl Scanner {
     }
 
     /// Consumes an identifier or keyword and makes a Token.
-    fn identifier_literal(&mut self) -> Option<Token> {
+    fn identifier_literal(&mut self) -> Token {
         let mut length = 1;
         while is_digit(self.peek(length)) || is_alpha_or_under(self.peek(length)) {
             length += 1
         }
 
-        let kind = match self
+        match self
             .peek(0)
             .expect("Expected a character at the beginning of an identifier")
         {
-            'a' if length == 3 && self.starts_with("and") => Kind::And,
-            'c' if length == 5 && self.starts_with("class") => Kind::Class,
-            'e' if length == 4 && self.starts_with("else") => Kind::Else,
+            'a' if length == 3 && self.starts_with("and") => self.make_token(Kind::And, 3),
+            'c' if length == 5 && self.starts_with("class") => self.make_token(Kind::Class, 5),
+            'e' if length == 4 && self.starts_with("else") => self.make_token(Kind::Else, 4),
 
-            'f' if length == 5 && self.starts_with("false") => Kind::False,
-            'f' if length == 3 && self.starts_with("for") => Kind::For,
-            'f' if length == 3 && self.starts_with("fun") => Kind::Fun,
+            'f' if length == 5 && self.starts_with("false") => self.make_token(Kind::False, 5),
+            'f' if length == 3 && self.starts_with("for") => self.make_token(Kind::For, 3),
+            'f' if length == 3 && self.starts_with("fun") => self.make_token(Kind::Fun, 3),
 
-            'i' if length == 2 && self.starts_with("if") => Kind::If,
-            'n' if length == 3 && self.starts_with("nil") => Kind::Nil,
-            'o' if length == 2 && self.starts_with("or") => Kind::Or,
-            'p' if length == 5 && self.starts_with("print") => Kind::Print,
-            'r' if length == 6 && self.starts_with("return") => Kind::Return,
-            's' if length == 5 && self.starts_with("super") => Kind::Super,
+            'i' if length == 2 && self.starts_with("if") => self.make_token(Kind::If, 2),
+            'n' if length == 3 && self.starts_with("nil") => self.make_token(Kind::Nil, 3),
+            'o' if length == 2 && self.starts_with("or") => self.make_token(Kind::Or, 2),
+            'p' if length == 5 && self.starts_with("print") => self.make_token(Kind::Print, 5),
+            'r' if length == 6 && self.starts_with("return") => self.make_token(Kind::Return, 6),
+            's' if length == 5 && self.starts_with("super") => self.make_token(Kind::Super, 5),
 
-            't' if length == 4 && self.starts_with("this") => Kind::This,
-            't' if length == 4 && self.starts_with("true") => Kind::True,
+            't' if length == 4 && self.starts_with("this") => self.make_token(Kind::This, 4),
+            't' if length == 4 && self.starts_with("true") => self.make_token(Kind::True, 4),
 
-            'v' if length == 3 && self.starts_with("var") => Kind::Var,
-            'w' if length == 5 && self.starts_with("while") => Kind::While,
+            'v' if length == 3 && self.starts_with("var") => self.make_token(Kind::Var, 3),
+            'w' if length == 5 && self.starts_with("while") => self.make_token(Kind::While, 5),
 
-            _ => Kind::IdentifierLiteral,
-        };
-
-        self.make_token(kind, length)
+            _ => Token {
+                span: self.make_span(length),
+                kind: Kind::IdentifierLiteral(self.read_front(length)),
+            },
+        }
     }
 
     /// Consumes a number literal and makes a Token
-    fn number_literal(&mut self) -> Option<Token> {
+    fn number_literal(&mut self) -> Token {
         let mut length = 1;
         while is_digit(self.peek(length)) {
             length += 1
@@ -125,34 +126,50 @@ impl Scanner {
             }
         }
 
-        self.make_token(Kind::NumberLiteral, length)
+        Token {
+            span: self.make_span(length),
+            kind: Kind::NumberLiteral(self.read_front(length).parse().unwrap()),
+        }
     }
 
     /// Consumes a string literal and makes a Token
-    fn string_literal(&mut self) -> Option<Token> {
+    fn string_literal(&mut self) -> Token {
         let mut length = 1;
         while self.peek(length) != Some(&'"') && length <= self.characters.len() {
             length += 1
         }
 
         if length >= self.characters.len() {
-            self.make_token(Kind::Error, length)
+            self.make_error_token(self.characters.len() - 1)
         } else {
-            self.make_token(Kind::StringLiteral, length + 1)
+            Token {
+                span: self.make_span(length + 1),
+                kind: Kind::StringLiteral(self.read_front(length + 1)[1..length].to_string()),
+            }
         }
     }
 
     /// Makes a token of the given `kind` out of the first `count` characters in `self.characters`.
-    fn make_token(&mut self, kind: Kind, count: usize) -> Option<Token> {
+    fn make_token(&mut self, kind: Kind, length: usize) -> Token {
         let span = match kind {
-            Kind::Eof => Span::new(self.index, self.index + 1),
-            _ => Span::new(self.index, self.index + count),
+            Kind::Eof => self.make_span(1),
+            _ => self.make_span(length),
         };
-        Some(Token {
-            kind,
-            string: self.read_front(count),
-            span,
-        })
+        self.read_front(length);
+        Token { kind, span }
+    }
+
+    /// Makes an error token out the next `length` characters
+    fn make_error_token(&mut self, length: usize) -> Token {
+        Token {
+            span: self.make_span(length),
+            kind: Kind::Error(self.read_front(length)),
+        }
+    }
+
+    /// Makes a span beginning at the current location in source and continuing for `length` characters
+    fn make_span(&self, length: usize) -> Span {
+        Span::new(self.index, self.index + length)
     }
 
     /// Indicates whether thte prefix of `self.characters` matches the given prefix.
@@ -230,26 +247,38 @@ mod tests {
 
     #[test]
     fn number_literals() {
-        single_token_test(String::from("123"), Kind::NumberLiteral);
-        single_token_test(String::from("123.1"), Kind::NumberLiteral);
-        single_token_test(String::from("123.456"), Kind::NumberLiteral);
-        single_token_test(String::from("0.456"), Kind::NumberLiteral);
-        single_token_test(String::from("0.0"), Kind::NumberLiteral);
+        single_token_test(String::from("123"), Kind::NumberLiteral(123f64));
+        single_token_test(String::from("123.1"), Kind::NumberLiteral(123.1f64));
+        single_token_test(String::from("123.456"), Kind::NumberLiteral(123.456f64));
+        single_token_test(String::from("0.456"), Kind::NumberLiteral(0.456f64));
+        single_token_test(String::from("0.0"), Kind::NumberLiteral(0f64));
     }
 
     #[test]
     fn string_literals() {
-        single_token_test(String::from("\"\""), Kind::StringLiteral);
-        single_token_test(String::from("\"a string literal\""), Kind::StringLiteral);
+        single_token_test(String::from("\"\""), Kind::StringLiteral("".to_string()));
+        single_token_test(
+            String::from("\"a string literal\""),
+            Kind::StringLiteral("a string literal".to_string()),
+        );
     }
 
     #[test]
     fn identifier_literals() {
-        single_token_test(String::from("x"), Kind::IdentifierLiteral);
-        single_token_test(String::from("While"), Kind::IdentifierLiteral);
-        single_token_test(String::from("_"), Kind::IdentifierLiteral);
-        single_token_test(String::from("_1"), Kind::IdentifierLiteral);
-        single_token_test(String::from("_abc123"), Kind::IdentifierLiteral);
+        single_token_test(String::from("x"), Kind::IdentifierLiteral("x".to_string()));
+        single_token_test(
+            String::from("While"),
+            Kind::IdentifierLiteral("While".to_string()),
+        );
+        single_token_test(String::from("_"), Kind::IdentifierLiteral("_".to_string()));
+        single_token_test(
+            String::from("_1"),
+            Kind::IdentifierLiteral("_1".to_string()),
+        );
+        single_token_test(
+            String::from("_abc123"),
+            Kind::IdentifierLiteral("_abc123".to_string()),
+        );
     }
 
     #[test]
@@ -309,7 +338,10 @@ mod tests {
         assert_eq!(scanner.next().unwrap().kind, Kind::True);
         assert_eq!(scanner.next().unwrap().kind, Kind::RightParen);
         assert_eq!(scanner.next().unwrap().kind, Kind::Print);
-        assert_eq!(scanner.next().unwrap().kind, Kind::StringLiteral);
+        assert_eq!(
+            scanner.next().unwrap().kind,
+            Kind::StringLiteral("hey   ".to_string())
+        );
     }
 
     #[test]
@@ -338,7 +370,6 @@ long_id // This is a comment
         let token = scanner.next();
 
         assert_eq!(token.as_ref().unwrap().kind, expected_kind);
-        assert_eq!(token.as_ref().unwrap().string, source);
         assert_eq!(scanner.next().unwrap().kind, Kind::Eof, "Expected Eof.");
     }
 }

@@ -70,9 +70,12 @@ impl Parser {
     fn var_declaration(&mut self) -> AstNode {
         let keyword = self.advance();
 
-        let name = match self.eat(Kind::IdentifierLiteral, "Expected identifier after 'var'.") {
-            Ok(t) => t,
-            Err(()) => return AstNode::none(),
+        let name_token = self.advance();
+        let name = if let Kind::IdentifierLiteral(id) = name_token.kind {
+            id
+        } else {
+            self.error_at(&name_token.span, "Expected variable name after 'var'.");
+            return AstNode::none();
         };
 
         let node = if self.current.kind == Kind::Equal {
@@ -80,7 +83,7 @@ impl Parser {
             let initializer = self.expression();
             let span = Span::merge(vec![
                 &keyword.span,
-                &name.span,
+                &name_token.span,
                 &operator.span,
                 &initializer.span,
             ]);
@@ -93,7 +96,7 @@ impl Parser {
                 span,
             )
         } else {
-            let span = Span::merge(vec![&keyword.span, &name.span]);
+            let span = Span::merge(vec![&keyword.span, &name_token.span]);
             AstNode::new_statement(
                 Statement::Declaration {
                     name,
@@ -118,9 +121,12 @@ impl Parser {
         parameters.push(self.advance());
         while self.current.kind == Kind::Comma {
             self.advance();
-            match self.eat(Kind::IdentifierLiteral, "Expected parameter name.") {
-                Ok(id) => parameters.push(id),
-                Err(_) => return Err(()),
+            let param_name = self.advance();
+            if let Kind::IdentifierLiteral(_) = param_name.kind {
+                parameters.push(param_name);
+            } else {
+                self.error_at(&param_name.span, "Expected parameter name.");
+                return Err(());
             }
         }
 
@@ -128,9 +134,12 @@ impl Parser {
     }
 
     fn function(&mut self) -> AstNode {
-        let name = match self.eat(Kind::IdentifierLiteral, "Expected function name.") {
-            Ok(t) => t,
-            Err(()) => return AstNode::none(),
+        let name_token = self.advance();
+        let name = if let Kind::IdentifierLiteral(s) = name_token.kind {
+            s
+        } else {
+            self.error_at(&name_token.span, "Expected function name.");
+            return AstNode::none();
         };
 
         match self.eat(Kind::LeftParen, "Expected '(' after function declaration") {
@@ -140,7 +149,7 @@ impl Parser {
 
         let parameters = match self.current.kind {
             Kind::RightParen => vec![],
-            Kind::IdentifierLiteral => match self.parameter_list() {
+            Kind::IdentifierLiteral(_) => match self.parameter_list() {
                 Ok(list) => list,
                 Err(()) => return AstNode::none(),
             },
@@ -157,7 +166,7 @@ impl Parser {
         }
 
         let body = self.block_statement();
-        let span = Span::merge(vec![&name.span, &body.span]);
+        let span = Span::merge(vec![&name_token.span, &body.span]);
 
         AstNode::new_statement(
             Statement::FunDeclaration {
@@ -367,7 +376,6 @@ impl Parser {
                 let new_span = Span::merge(vec![&keyword.span, &expression.span, &semi.span]);
                 AstNode::new_statement(
                     Statement::Print {
-                        keyword,
                         expression: Box::new(expression),
                     },
                     new_span,
@@ -551,7 +559,7 @@ impl Parser {
     }
 
     fn primary(&mut self) -> AstNode {
-        match self.current.kind {
+        match self.current.clone().kind {
             Kind::LeftParen => {
                 let lparen = self.advance();
                 let expression = self.expression();
@@ -564,20 +572,19 @@ impl Parser {
                     Err(()) => AstNode::none(),
                 }
             }
-            Kind::IdentifierLiteral => {
+            Kind::IdentifierLiteral(name) => {
                 let literal = self.advance();
                 let span = literal.span;
-                AstNode::new_expression(Expression::Variable { name: literal }, span)
+                AstNode::new_expression(Expression::Variable { name }, span)
             }
-            Kind::NumberLiteral => self.number(),
-            Kind::StringLiteral => self.string(),
+            Kind::NumberLiteral(_) => self.number(),
+            Kind::StringLiteral(_) => self.string(),
             Kind::True => {
                 let literal = self.advance();
                 let span = literal.span;
                 AstNode::new_expression(
                     Expression::Constant {
                         value: Value::Bool(true),
-                        literal,
                     },
                     span,
                 )
@@ -588,7 +595,6 @@ impl Parser {
                 AstNode::new_expression(
                     Expression::Constant {
                         value: Value::Bool(false),
-                        literal,
                     },
                     span,
                 )
@@ -596,13 +602,7 @@ impl Parser {
             Kind::Nil => {
                 let literal = self.advance();
                 let span = literal.span;
-                AstNode::new_expression(
-                    Expression::Constant {
-                        value: Value::Nil,
-                        literal,
-                    },
-                    span,
-                )
+                AstNode::new_expression(Expression::Constant { value: Value::Nil }, span)
             }
             _ => {
                 self.error_at_current("Expected primary expression.");
@@ -612,25 +612,34 @@ impl Parser {
     }
 
     fn number(&mut self) -> AstNode {
-        let literal = self.advance();
-        let span = literal.span;
+        let Token { kind, span } = self.advance();
 
-        let value = Value::Number(
-            literal
-                .string
-                .parse()
-                .unwrap_or_else(|_| panic!("Failed to parse '{}' as f64", literal.string)),
-        );
-
-        AstNode::new_expression(Expression::Constant { literal, value }, span)
+        if let Kind::NumberLiteral(n) = kind {
+            AstNode::new_expression(
+                Expression::Constant {
+                    value: Value::from(n),
+                },
+                span,
+            )
+        } else {
+            self.error_at(&span, "Expected a NumberLiteral.");
+            AstNode::none()
+        }
     }
 
     fn string(&mut self) -> AstNode {
-        let literal = self.advance();
-        let span = literal.span;
-        let value = Value::from(&literal.string[1..literal.string.len() - 1]);
-
-        AstNode::new_expression(Expression::Constant { literal, value }, span)
+        let Token { kind, span } = self.advance();
+        if let Kind::StringLiteral(s) = kind {
+            AstNode::new_expression(
+                Expression::Constant {
+                    value: Value::from(s),
+                },
+                span,
+            )
+        } else {
+            self.error_at(&span, "Expected a StringLiteral.");
+            AstNode::none()
+        }
     }
 
     fn advance(&mut self) -> Token {
@@ -638,8 +647,8 @@ impl Parser {
         self.current = self.next.clone();
         loop {
             self.next = self.scanner.next().unwrap();
-            if let Kind::Error = self.next.kind {
-                self.error_at_next(format!("Unknown character {}", self.next.string).as_str());
+            if let Kind::Error(s) = self.next.clone().kind {
+                self.error_at_next(format!("Unknown character {}", s).as_str());
             } else {
                 break;
             }

@@ -77,11 +77,10 @@ pub enum Expression {
         rvalue: Box<AstNode>,
     },
     Variable {
-        name: Token,
+        name: String,
     },
     Constant {
         value: Value,
-        literal: Token,
     },
     Call {
         target: Box<AstNode>,
@@ -97,11 +96,10 @@ pub enum Statement {
         expression: Box<AstNode>,
     },
     Print {
-        keyword: Token,
         expression: Box<AstNode>,
     },
     Declaration {
-        name: Token,
+        name: String,
         operator: Option<Token>,
         initializer: Option<Box<AstNode>>,
     },
@@ -125,7 +123,7 @@ pub enum Statement {
         block: Box<AstNode>,
     },
     FunDeclaration {
-        name: Token,
+        name: String,
         parameters: Vec<Token>,
         body: Box<AstNode>,
     },
