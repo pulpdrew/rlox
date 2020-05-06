@@ -73,6 +73,15 @@ impl Value {
         }
     }
 
+    /// Indicates whether the Value is a `Obj` variant
+    pub fn is_obj_kind(&self, kind: ObjKind) -> bool {
+        if let Value::Obj(_, k) = self {
+            k == &kind
+        } else {
+            false
+        }
+    }
+
     /// Indicates whether the Value is 'Truthy' according to the rules of the language
     pub fn is_truthy(&self) -> bool {
         match self {

@@ -323,14 +323,13 @@ impl Parser {
         let node = self.logic_or()?;
 
         if self.current.kind == Kind::Equal {
-            let operator = self.advance();
+            self.advance();
             let rvalue = self.assignment()?;
-            let new_span = Span::merge(vec![&node.span, &operator.span, &rvalue.span]);
+            let new_span = Span::merge(vec![&node.span, &rvalue.span]);
 
             Ok(AstNode::new_expression(
                 Expression::Assignment {
                     lvalue: Box::new(node),
-                    operator,
                     rvalue: Box::new(rvalue),
                 },
                 new_span,

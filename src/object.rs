@@ -12,7 +12,7 @@ pub enum Obj {
     String(String),
     Function(ObjFunction),
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ObjKind {
     String,
     Function,

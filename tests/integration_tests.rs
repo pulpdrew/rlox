@@ -8,8 +8,8 @@ fn empty_source() {
     let expected_stdout = "".trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -35,8 +35,8 @@ nil
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -58,8 +58,8 @@ ABC
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -100,8 +100,8 @@ nil
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -141,8 +141,8 @@ true
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -160,8 +160,8 @@ fn arithmetic() {
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -185,8 +185,8 @@ fn blocks() {
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -236,8 +236,8 @@ nil
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -263,8 +263,8 @@ fn nested_locals() {
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -298,8 +298,8 @@ E
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -325,8 +325,8 @@ fn while_statements() {
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -365,8 +365,8 @@ for (; i < 10;) {
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -395,8 +395,8 @@ fn function_declaration() {
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -417,8 +417,8 @@ foo
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -439,8 +439,8 @@ fn function_arguments() {
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -462,8 +462,8 @@ fn function_return() {
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -487,8 +487,8 @@ fn function_local() {
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }
 
 #[test]
@@ -514,6 +514,6 @@ fn function_recursive() {
     .trim();
 
     let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stdout, stdout.contents.trim());
     assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
 }

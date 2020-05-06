@@ -73,7 +73,6 @@ pub enum Expression {
     },
     Assignment {
         lvalue: Box<AstNode>,
-        operator: Token,
         rvalue: Box<AstNode>,
     },
     Variable {
