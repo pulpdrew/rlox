@@ -5,6 +5,7 @@ use crate::object::{Obj, ObjFunction};
 use crate::opcode::OpCode;
 use crate::token::{Kind, Span};
 use crate::value::Value;
+use std::io::Write;
 
 #[derive(Debug)]
 pub struct CompilationError {
@@ -21,11 +22,12 @@ impl ReportableError for CompilationError {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct Compiler {
+#[derive(Debug)]
+pub struct Compiler<'a, W: Write> {
     function: Option<Obj>,
     locals: Vec<Local>,
     scope_depth: usize,
+    output_stream: &'a mut W,
 }
 
 #[derive(Debug)]
@@ -34,8 +36,11 @@ struct Local {
     depth: usize,
 }
 
-pub fn compile(program: Vec<AstNode>) -> Result<ObjFunction, CompilationError> {
-    let mut compiler = Compiler::new();
+pub fn compile<W: Write>(
+    program: Vec<AstNode>,
+    output_stream: &mut W,
+) -> Result<ObjFunction, CompilationError> {
+    let mut compiler = Compiler::new(output_stream);
     let mut bin = Executable::new(String::from("script"));
 
     match compiler.compile_into(program, &mut bin) {
@@ -48,12 +53,13 @@ pub fn compile(program: Vec<AstNode>) -> Result<ObjFunction, CompilationError> {
     }
 }
 
-impl Compiler {
-    pub fn new() -> Self {
+impl<'a, W: Write> Compiler<'a, W> {
+    pub fn new(output_stream: &'a mut W) -> Self {
         Compiler {
             function: None,
             locals: vec![],
             scope_depth: 0,
+            output_stream,
         }
     }
     pub fn compile_into(
@@ -241,6 +247,7 @@ impl Compiler {
                 let mut locals_backup: Vec<Local> = self.locals.drain(0..).collect();
                 self.begin_scope();
 
+                // Add the parameters to the list of Locals
                 for param in parameters.iter() {
                     if let Kind::IdentifierLiteral(param_name) = &param.kind {
                         self.locals.push(Local {
@@ -255,28 +262,34 @@ impl Compiler {
                     }
                 }
 
+                // Compile the function body
                 let mut function_binary = Executable::new(name.clone());
                 self.compile_statement(&mut function_binary, body)?;
+
+                // Always add return nil; to the end in case there is no explicit return statement
                 function_binary.push_constant_inst(
                     OpCode::Constant,
                     Value::Nil,
                     statement_node.span,
                 );
                 function_binary.push_opcode(OpCode::Return, body.span);
+
                 if cfg!(feature = "disassemble") {
-                    function_binary.dump();
+                    // Disassemble the function body
+                    function_binary.dump(self.output_stream);
                 }
 
+                // End the scope and restore the outer function's locals
                 self.end_scope(&mut function_binary, body.span);
                 self.locals = locals_backup.drain(0..).collect();
 
-                // Put the function object on the top of the stack
+                // Put the function object on the top of the stack and create a closure
                 let value = Value::from(ObjFunction {
                     name: Box::new(Obj::from(name.clone())),
                     arity: parameters.len() as u8,
                     bin: function_binary,
                 });
-                bin.push_constant_inst(OpCode::Constant, value, statement_node.span);
+                bin.push_constant_inst(OpCode::Closure, value, statement_node.span);
 
                 // Assign the function to the variable of the matching name
                 let name_value = Value::from(name.clone());

@@ -1,5 +1,6 @@
 use crate::executable::Executable;
 use std::fmt;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct ObjFunction {
@@ -8,14 +9,22 @@ pub struct ObjFunction {
     pub name: Box<Obj>,
 }
 
+#[derive(Debug)]
+pub struct ObjClosure {
+    pub function: Rc<ObjFunction>,
+}
+
 pub enum Obj {
     String(String),
-    Function(ObjFunction),
+    Function(Rc<ObjFunction>),
+    Closure(ObjClosure),
 }
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ObjKind {
     String,
     Function,
+    Closure,
 }
 
 impl Obj {
@@ -32,6 +41,7 @@ impl fmt::Display for Obj {
         match self {
             Obj::String(s) => write!(f, "{}", s),
             Obj::Function(func) => write!(f, "<fn: {}>", func.name),
+            Obj::Closure(c) => write!(f, "<fn: {}>", (*c.function).name),
         }
     }
 }
@@ -41,6 +51,7 @@ impl fmt::Debug for Obj {
         match self {
             Obj::String(s) => write!(f, "\"{}\"", s),
             Obj::Function(func) => write!(f, "<fn: {}>", func.name),
+            Obj::Closure(c) => write!(f, "<fn: {}>", c.function.name),
         }
     }
 }
@@ -66,6 +77,12 @@ impl From<&str> for Obj {
 
 impl From<ObjFunction> for Obj {
     fn from(func: ObjFunction) -> Self {
-        Obj::Function(func)
+        Obj::Function(Rc::new(func))
+    }
+}
+
+impl From<ObjClosure> for Obj {
+    fn from(closure: ObjClosure) -> Self {
+        Obj::Closure(closure)
     }
 }

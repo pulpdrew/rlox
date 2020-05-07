@@ -1,6 +1,7 @@
 use crate::opcode::OpCode;
 use crate::token::Span;
 use crate::value::Value;
+use std::io::Write;
 
 /// An Executable contains the output of compilation to be run on a VM.
 #[derive(Debug)]
@@ -109,80 +110,91 @@ impl Executable {
     }
 
     /// Disassemble this Executable and print the result
-    pub fn dump(&self) {
-        println!();
-        println!("(Dumping: {})", self.name);
-        println!("Index  OpCode              Arguments");
-        println!("------------------------------------");
+    pub fn dump<W: Write>(&self, out: &mut W) {
+        writeln!(out).unwrap();
+        writeln!(out, "(Dumping: {})", self.name).unwrap();
+        writeln!(out, "Index  OpCode              Arguments").unwrap();
+        writeln!(out, "------------------------------------").unwrap();
         let mut offset = 0;
         while offset < self.code.len() {
-            offset = self.disassemble_instruction(offset);
+            offset = self.disassemble_instruction(offset, out);
         }
-        println!();
+        writeln!(out).unwrap();
     }
 
     /// Disassemble the Instruction beginning at the given offset
     /// and print the result
-    pub fn disassemble_instruction(&self, offset: usize) -> usize {
+    pub fn disassemble_instruction<W: Write>(&self, offset: usize, out: &mut W) -> usize {
         print!("{:0>5}  ", offset);
         match OpCode::from(self.read_u8(offset)) {
-            OpCode::Constant => self.constant_instruction("Constant", offset),
-            OpCode::LongConstant => self.long_constant_instruction("LongConstant", offset),
-            OpCode::Return => self.simple_instruction("Return", offset),
-            OpCode::Add => self.simple_instruction("Add", offset),
-            OpCode::Subtract => self.simple_instruction("Subtract", offset),
-            OpCode::Multiply => self.simple_instruction("Multiply", offset),
-            OpCode::Divide => self.simple_instruction("Divide", offset),
-            OpCode::Negate => self.simple_instruction("Negate", offset),
-            OpCode::Less => self.simple_instruction("Less", offset),
-            OpCode::LessEqual => self.simple_instruction("LessEqual", offset),
-            OpCode::Greater => self.simple_instruction("Greater", offset),
-            OpCode::GreaterEqual => self.simple_instruction("GreaterEqual", offset),
-            OpCode::Equal => self.simple_instruction("Equal", offset),
-            OpCode::Not => self.simple_instruction("Not", offset),
-            OpCode::Print => self.simple_instruction("Print", offset),
-            OpCode::Pop => self.simple_instruction("Pop", offset),
-            OpCode::SetGlobal => self.constant_instruction("SetGlobal", offset),
-            OpCode::SetLongGlobal => self.long_constant_instruction("SetLongGlobal", offset),
-            OpCode::GetGlobal => self.constant_instruction("GetGlobal", offset),
-            OpCode::GetLongGlobal => self.long_constant_instruction("GetLongGlobal", offset),
-            OpCode::DeclareGlobal => self.constant_instruction("DeclareGlobal", offset),
+            OpCode::Constant => self.constant_instruction("Constant", offset, out),
+            OpCode::LongConstant => self.long_constant_instruction("LongConstant", offset, out),
+            OpCode::Return => self.simple_instruction("Return", offset, out),
+            OpCode::Add => self.simple_instruction("Add", offset, out),
+            OpCode::Subtract => self.simple_instruction("Subtract", offset, out),
+            OpCode::Multiply => self.simple_instruction("Multiply", offset, out),
+            OpCode::Divide => self.simple_instruction("Divide", offset, out),
+            OpCode::Negate => self.simple_instruction("Negate", offset, out),
+            OpCode::Less => self.simple_instruction("Less", offset, out),
+            OpCode::LessEqual => self.simple_instruction("LessEqual", offset, out),
+            OpCode::Greater => self.simple_instruction("Greater", offset, out),
+            OpCode::GreaterEqual => self.simple_instruction("GreaterEqual", offset, out),
+            OpCode::Equal => self.simple_instruction("Equal", offset, out),
+            OpCode::Not => self.simple_instruction("Not", offset, out),
+            OpCode::Print => self.simple_instruction("Print", offset, out),
+            OpCode::Pop => self.simple_instruction("Pop", offset, out),
+            OpCode::SetGlobal => self.constant_instruction("SetGlobal", offset, out),
+            OpCode::SetLongGlobal => self.long_constant_instruction("SetLongGlobal", offset, out),
+            OpCode::GetGlobal => self.constant_instruction("GetGlobal", offset, out),
+            OpCode::GetLongGlobal => self.long_constant_instruction("GetLongGlobal", offset, out),
+            OpCode::DeclareGlobal => self.constant_instruction("DeclareGlobal", offset, out),
             OpCode::DeclareLongGlobal => {
-                self.long_constant_instruction("DeclareLongGlobal", offset)
+                self.long_constant_instruction("DeclareLongGlobal", offset, out)
             }
-            OpCode::SetLocal => self.single_arg_instruction("SetLocal", offset),
-            OpCode::GetLocal => self.single_arg_instruction("GetLocal", offset),
-            OpCode::Jump => self.single_long_arg_instruction("Jump", offset),
-            OpCode::JumpIfTrue => self.single_long_arg_instruction("JumpIfTrue", offset),
-            OpCode::JumpIfFalse => self.single_long_arg_instruction("JumpIfFalse", offset),
-            OpCode::Call => self.single_arg_instruction("Call", offset),
+            OpCode::SetLocal => self.single_arg_instruction("SetLocal", offset, out),
+            OpCode::GetLocal => self.single_arg_instruction("GetLocal", offset, out),
+            OpCode::Jump => self.single_long_arg_instruction("Jump", offset, out),
+            OpCode::JumpIfTrue => self.single_long_arg_instruction("JumpIfTrue", offset, out),
+            OpCode::JumpIfFalse => self.single_long_arg_instruction("JumpIfFalse", offset, out),
+            OpCode::Call => self.single_arg_instruction("Call", offset, out),
+            OpCode::Closure => {
+                let index = self.read_u8(offset + 1);
+                let value = &self.constants[index as usize];
+                writeln!(out, "{:<16} {:>4}[{:?}]", "Closure", index, value).unwrap();
+                offset
+            }
         }
     }
 
-    fn constant_instruction(&self, name: &str, offset: usize) -> usize {
+    fn constant_instruction<W: Write>(&self, name: &str, offset: usize, out: &mut W) -> usize {
         let index = self.read_u8(offset + 1);
         let value = &self.constants[index as usize];
-        println!("{:<16} {:>4}[{:?}]", name, index, value);
+        writeln!(out, "{:<16} {:>4}[{:?}]", name, index, value).unwrap();
         offset + 2
     }
-    fn single_arg_instruction(&self, name: &str, offset: usize) -> usize {
+    fn single_arg_instruction<W: Write>(&self, name: &str, offset: usize, out: &mut W) -> usize {
         let arg = self.read_u8(offset + 1);
-        println!("{:<16} {:>4}", name, arg);
+        writeln!(out, "{:<16} {:>4}", name, arg).unwrap();
         offset + 2
     }
-    fn single_long_arg_instruction(&self, name: &str, offset: usize) -> usize {
+    fn single_long_arg_instruction<W: Write>(
+        &self,
+        name: &str,
+        offset: usize,
+        out: &mut W,
+    ) -> usize {
         let arg = self.read_u16(offset + 1);
-        println!("{:<16} {:>4}", name, arg);
+        writeln!(out, "{:<16} {:>4}", name, arg).unwrap();
         offset + 3
     }
-    fn long_constant_instruction(&self, name: &str, offset: usize) -> usize {
+    fn long_constant_instruction<W: Write>(&self, name: &str, offset: usize, out: &mut W) -> usize {
         let index = self.read_u16(offset + 1);
         let value = &self.constants[index as usize];
-        println!("{:<16} {:>4}[{:?}]", name, index, value);
+        writeln!(out, "{:<16} {:>4}[{:?}]", name, index, value).unwrap();
         offset + 3
     }
-    fn simple_instruction(&self, name: &str, offset: usize) -> usize {
-        println!("{0:<16}", name);
+    fn simple_instruction<W: Write>(&self, name: &str, offset: usize, out: &mut W) -> usize {
+        writeln!(out, "{0:<16}", name).unwrap();
         offset + 1
     }
 }

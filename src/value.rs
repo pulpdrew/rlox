@@ -1,4 +1,4 @@
-use crate::object::{Obj, ObjFunction, ObjKind};
+use crate::object::{Obj, ObjClosure, ObjFunction, ObjKind};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops;
@@ -243,5 +243,11 @@ impl From<&str> for Value {
 impl From<ObjFunction> for Value {
     fn from(func: ObjFunction) -> Self {
         Value::Obj(Rc::new(Obj::from(func)), ObjKind::Function)
+    }
+}
+
+impl From<ObjClosure> for Value {
+    fn from(closure: ObjClosure) -> Self {
+        Value::Obj(Rc::new(Obj::from(closure)), ObjKind::Closure)
     }
 }

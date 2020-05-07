@@ -23,7 +23,7 @@ fn run(source: String, vm: &mut VM) {
     };
 
     // Compile
-    let script = match compiler::compile(ast) {
+    let script = match compiler::compile(ast, &mut std::io::stdout()) {
         Ok(bin) => bin,
         Err(e) => {
             reporter.report(&e);
@@ -32,7 +32,7 @@ fn run(source: String, vm: &mut VM) {
     };
 
     if cfg!(feature = "disassemble") {
-        script.bin.dump();
+        script.bin.dump(&mut std::io::stdout());
     }
 
     // Execute

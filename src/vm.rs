@@ -1,8 +1,6 @@
 use crate::error::ReportableError;
 use crate::executable::Executable;
-use crate::object::Obj;
-use crate::object::ObjFunction;
-use crate::object::ObjKind;
+use crate::object::{Obj, ObjClosure, ObjFunction, ObjKind};
 use crate::opcode::OpCode;
 use crate::token::Span;
 use crate::value::Value;
@@ -50,7 +48,7 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         while self.ip < function.bin.len() {
             if cfg!(feature = "disassemble") {
-                function.bin.disassemble_instruction(self.ip);
+                function.bin.disassemble_instruction(self.ip, output_stream);
             }
 
             match OpCode::from(self.read_u8(&function.bin)?) {
@@ -157,9 +155,9 @@ impl VM {
                     let callable = self.peek(arg_count as usize)?.clone();
 
                     match callable {
-                        Value::Obj(function, ObjKind::Function) => {
-                            if let Obj::Function(f) = &*function {
-                                self.call(f, arg_count, output_stream)?;
+                        Value::Obj(closure, ObjKind::Closure) => {
+                            if let Obj::Closure(c) = &*closure {
+                                self.call(c, arg_count, output_stream)?;
                             }
                         }
                         _ => {
@@ -169,6 +167,30 @@ impl VM {
                             });
                         }
                     }
+                }
+                OpCode::Closure => {
+                    let index = self.read_u8(&function.bin)? as u16;
+                    let arg_value = function.bin.get_constant(index).clone();
+
+                    let function = if let Value::Obj(func_obj, ObjKind::Function) = arg_value {
+                        if let Obj::Function(func) = &*func_obj {
+                            func.clone()
+                        } else {
+                            return Err(RuntimeError {
+                                message: format!("Non-function object stored in value with ObjKind::Function tag"),
+                                span: function.bin.spans[self.ip - 1]
+                            });
+                        }
+                    } else {
+                        return Err(RuntimeError {
+                            message: format!("Closure instruction expected function constant argument, but got {}", arg_value),
+                            span: function.bin.spans[self.ip - 1]
+                        });
+                    };
+
+                    let closure = ObjClosure { function };
+                    let closure_value = Value::from(closure);
+                    self.push(closure_value);
                 }
             }
             if cfg!(feature = "disassemble") {
@@ -183,7 +205,7 @@ impl VM {
 
     fn call<W: Write>(
         &mut self,
-        function: &ObjFunction,
+        closure: &ObjClosure,
         arg_count: u8,
         output_stream: &mut W,
     ) -> Result<(), RuntimeError> {
@@ -199,7 +221,7 @@ impl VM {
         self.ip = 0;
 
         // Run the function
-        self.interpret(function, output_stream)?;
+        self.interpret(&*closure.function, output_stream)?;
 
         // Remove everything from the stack except the return value
         for _ in (self.base + 1)..self.stack.len() {

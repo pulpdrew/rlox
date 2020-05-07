@@ -33,6 +33,7 @@ pub enum OpCode {
     JumpIfTrue,
     JumpIfFalse,
     Call,
+    Closure,
 }
 
 impl From<u8> for OpCode {
