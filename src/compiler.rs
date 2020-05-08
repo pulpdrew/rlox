@@ -1,7 +1,7 @@
 use crate::ast::{AstNode, Expression, Statement};
 use crate::error::ReportableError;
 use crate::executable::Executable;
-use crate::object::{Obj, ObjFunction};
+use crate::object::{ObjFunction, ObjString};
 use crate::opcode::OpCode;
 use crate::token::{Kind, Span};
 use crate::value::Value;
@@ -24,7 +24,7 @@ impl ReportableError for CompilationError {
 
 #[derive(Debug)]
 pub struct Compiler<'a, W: Write> {
-    function: Option<Obj>,
+    function: Option<ObjFunction>,
     locals: Vec<Local>,
     scope_depth: usize,
     output_stream: &'a mut W,
@@ -47,7 +47,7 @@ pub fn compile<W: Write>(
         Ok(..) => Ok(ObjFunction {
             arity: 0,
             bin,
-            name: Box::new(Obj::from("script")),
+            name: Box::new(ObjString::from("script")),
         }),
         Err(e) => Err(e),
     }
@@ -285,7 +285,7 @@ impl<'a, W: Write> Compiler<'a, W> {
 
                 // Put the function object on the top of the stack and create a closure
                 let value = Value::from(ObjFunction {
-                    name: Box::new(Obj::from(name.clone())),
+                    name: Box::new(ObjString::from(name.clone())),
                     arity: parameters.len() as u8,
                     bin: function_binary,
                 });

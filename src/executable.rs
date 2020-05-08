@@ -4,7 +4,7 @@ use crate::value::Value;
 use std::io::Write;
 
 /// An Executable contains the output of compilation to be run on a VM.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Executable {
     /// The OpCodes and arguments to be executed
     code: Vec<u8>,

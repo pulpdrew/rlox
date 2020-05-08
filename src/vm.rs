@@ -1,6 +1,6 @@
 use crate::error::ReportableError;
 use crate::executable::Executable;
-use crate::object::{Obj, ObjClosure, ObjFunction, ObjKind};
+use crate::object::{ObjClosure, ObjFunction};
 use crate::opcode::OpCode;
 use crate::token::Span;
 use crate::value::Value;
@@ -155,10 +155,8 @@ impl VM {
                     let callable = self.peek(arg_count as usize)?.clone();
 
                     match callable {
-                        Value::Obj(closure, ObjKind::Closure) => {
-                            if let Obj::Closure(c) = &*closure {
-                                self.call(c, arg_count, output_stream)?;
-                            }
+                        Value::Closure(closure) => {
+                            self.call(&*closure, arg_count, output_stream)?;
                         }
                         _ => {
                             return Err(RuntimeError {
@@ -172,15 +170,8 @@ impl VM {
                     let index = self.read_u8(&function.bin)? as u16;
                     let arg_value = function.bin.get_constant(index).clone();
 
-                    let function = if let Value::Obj(func_obj, ObjKind::Function) = arg_value {
-                        if let Obj::Function(func) = &*func_obj {
-                            func.clone()
-                        } else {
-                            return Err(RuntimeError {
-                                message: format!("Non-function object stored in value with ObjKind::Function tag"),
-                                span: function.bin.spans[self.ip - 1]
-                            });
-                        }
+                    let function = if let Value::Function(f) = arg_value {
+                        f.clone()
                     } else {
                         return Err(RuntimeError {
                             message: format!("Closure instruction expected function constant argument, but got {}", arg_value),
@@ -261,12 +252,12 @@ impl VM {
                         message: String::from("Cannot apply '+' to Number and Non-Number"),
                         span: bin.spans[self.ip - 1],
                     });
-                } else if left.is_obj_kind(ObjKind::String) && !right.is_obj_kind(ObjKind::String) {
+                } else if left.is_string() && !right.is_string() {
                     return Err(RuntimeError {
                         message: String::from("Cannot apply '+' to String and Non-String"),
                         span: bin.spans[self.ip - 1],
                     });
-                } else if !left.is_number() && !left.is_obj_kind(ObjKind::String) {
+                } else if !left.is_number() && !left.is_string() {
                     return Err(RuntimeError {
                         message: String::from("Cannot apply '+' to non-numeric or non-string type"),
                         span: bin.spans[self.ip - 1],
@@ -301,19 +292,12 @@ impl VM {
 
     fn get_global(&mut self, name_index: u16, function: &ObjFunction) -> Result<(), RuntimeError> {
         let name_arg = function.bin.get_constant(name_index);
-        let value = if let Value::Obj(name_obj, ObjKind::String) = name_arg {
-            if let Obj::String(name) = &**name_obj {
-                if let Some(value) = self.globals.get(name) {
-                    value.clone()
-                } else {
-                    return Err(RuntimeError {
-                        message: format!("Attempted to get unknown global {}", name),
-                        span: function.bin.spans[self.ip - 1],
-                    });
-                }
+        let value = if let Value::String(name) = name_arg {
+            if let Some(value) = self.globals.get(&name.string) {
+                value.clone()
             } else {
                 return Err(RuntimeError {
-                    message: format!("Non-string Obj found in ObjKind::String value"),
+                    message: format!("Attempted to get unknown global {}", name),
                     span: function.bin.spans[self.ip - 1],
                 });
             }
@@ -332,19 +316,13 @@ impl VM {
 
     fn set_global(&mut self, name_index: u16, function: &ObjFunction) -> Result<(), RuntimeError> {
         let name_arg = function.bin.get_constant(name_index);
-        if let Value::Obj(name_obj, ObjKind::String) = name_arg {
-            if let Obj::String(name) = &**name_obj {
-                if self.globals.contains_key(name) {
-                    self.globals.insert(name.clone(), self.peek(0)?.clone());
-                } else {
-                    return Err(RuntimeError {
-                        message: format!("Assigned to set undeclared global {}", name),
-                        span: function.bin.spans[self.ip - 1],
-                    });
-                }
+        if let Value::String(name) = name_arg {
+            if self.globals.contains_key(&name.string) {
+                self.globals
+                    .insert(name.string.clone(), self.peek(0)?.clone());
             } else {
                 return Err(RuntimeError {
-                    message: format!("Non-string Obj found in ObjKind::String value"),
+                    message: format!("Assigned to set undeclared global {}", name),
                     span: function.bin.spans[self.ip - 1],
                 });
             }
@@ -364,15 +342,8 @@ impl VM {
         function: &ObjFunction,
     ) -> Result<(), RuntimeError> {
         let name_arg = function.bin.get_constant(name_index);
-        if let Value::Obj(name_obj, ObjKind::String) = name_arg {
-            if let Obj::String(name) = &**name_obj {
-                self.globals.insert(name.clone(), Value::Nil);
-            } else {
-                return Err(RuntimeError {
-                    message: format!("Non-string Obj found in ObjKind::String value"),
-                    span: function.bin.spans[self.ip - 1],
-                });
-            }
+        if let Value::String(name) = name_arg {
+            self.globals.insert(name.string.clone(), Value::Nil);
         } else {
             return Err(RuntimeError {
                 message: format!(
@@ -418,7 +389,7 @@ impl VM {
         match self.stack.pop() {
             Some(v) => Ok(v),
             None => Err(RuntimeError {
-                message: format!("Attempted pop() on an empty stack",),
+                message: "Attempted pop() on an empty stack".to_string(),
                 span: Span::new(0, 0),
             }),
         }

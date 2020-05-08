@@ -1,4 +1,4 @@
-use crate::object::{Obj, ObjClosure, ObjFunction, ObjKind};
+use crate::object::{ObjClosure, ObjFunction, ObjString};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops;
@@ -11,7 +11,9 @@ pub enum Value {
     Number(f64),
     Bool(bool),
     Nil,
-    Obj(Rc<Obj>, ObjKind),
+    Function(Rc<ObjFunction>),
+    Closure(Rc<ObjClosure>),
+    String(Rc<ObjString>),
 }
 
 impl fmt::Debug for Value {
@@ -20,7 +22,9 @@ impl fmt::Debug for Value {
             Value::Number(n) => write!(f, "Number({})", n),
             Value::Bool(b) => write!(f, "Bool({})", b),
             Value::Nil => write!(f, "Nil",),
-            Value::Obj(o, _) => write!(f, "{:?}", o),
+            Value::Function(func) => write!(f, "{:?}", func),
+            Value::Closure(c) => write!(f, "{:?}", c),
+            Value::String(s) => write!(f, "{:?}", s),
         }
     }
 }
@@ -31,7 +35,9 @@ impl fmt::Display for Value {
             Value::Nil => write!(f, "nil"),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Number(n) => write!(f, "{}", n),
-            Value::Obj(o, ..) => write!(f, "{}", o),
+            Value::Function(func) => write!(f, "{}", func),
+            Value::Closure(c) => write!(f, "{}", c),
+            Value::String(s) => write!(f, "{}", s),
         }
     }
 }
@@ -64,19 +70,9 @@ impl Value {
         }
     }
 
-    /// Indicates whether the Value is a `Obj` variant
-    pub fn is_obj(&self) -> bool {
-        if let Value::Obj(..) = self {
+    pub fn is_string(&self) -> bool {
+        if let Value::String(_) = self {
             true
-        } else {
-            false
-        }
-    }
-
-    /// Indicates whether the Value is a `Obj` variant
-    pub fn is_obj_kind(&self, kind: ObjKind) -> bool {
-        if let Value::Obj(_, k) = self {
-            k == &kind
         } else {
             false
         }
@@ -88,7 +84,8 @@ impl Value {
             Value::Bool(b) => *b,
             Value::Nil => false,
             Value::Number(n) => (n - 0f64).abs() > std::f64::EPSILON,
-            Value::Obj(..) => true,
+            Value::String(s) => !s.string.is_empty(),
+            _ => true,
         }
     }
 }
@@ -104,8 +101,8 @@ impl ops::Add for Value {
             } else {
                 panic!("Attempted to add [Number] + [Not a number]");
             }
-        } else if let Value::Obj(left, ObjKind::String) = self {
-            if let Value::Obj(right, ObjKind::String) = rhs {
+        } else if let Value::String(left) = self {
+            if let Value::String(right) = rhs {
                 Value::from(format!("{}{}", left, right))
             } else {
                 panic!("Attempted to add [String] + [Not a String]");
@@ -190,7 +187,18 @@ impl PartialEq for Value {
                 _ => false,
             },
             Value::Nil => other.is_nil(),
-            Value::Obj(..) => other.is_obj(),
+            Value::Function(l) => match other {
+                Value::Function(r) => l == r,
+                _ => false,
+            },
+            Value::Closure(l) => match other {
+                Value::Closure(r) => l == r,
+                _ => false,
+            },
+            Value::String(l) => match other {
+                Value::String(r) => l.string == r.string,
+                _ => false,
+            },
         }
     }
 }
@@ -230,24 +238,24 @@ impl From<bool> for Value {
 
 impl From<String> for Value {
     fn from(string: String) -> Self {
-        Value::Obj(Rc::new(Obj::from(string)), ObjKind::String)
+        Value::String(Rc::new(ObjString::from(string)))
     }
 }
 
 impl From<&str> for Value {
     fn from(string: &str) -> Self {
-        Value::Obj(Rc::new(Obj::from(string)), ObjKind::String)
+        Value::String(Rc::new(ObjString::from(string)))
     }
 }
 
 impl From<ObjFunction> for Value {
     fn from(func: ObjFunction) -> Self {
-        Value::Obj(Rc::new(Obj::from(func)), ObjKind::Function)
+        Value::Function(Rc::new(func))
     }
 }
 
 impl From<ObjClosure> for Value {
     fn from(closure: ObjClosure) -> Self {
-        Value::Obj(Rc::new(Obj::from(closure)), ObjKind::Closure)
+        Value::Closure(Rc::new(closure))
     }
 }
