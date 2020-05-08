@@ -161,7 +161,7 @@ impl Executable {
                 let index = self.read_u8(offset + 1);
                 let value = &self.constants[index as usize];
                 writeln!(out, "{:<16} {:>4}[{:?}]", "Closure", index, value).unwrap();
-                offset
+                offset + 2
             }
         }
     }

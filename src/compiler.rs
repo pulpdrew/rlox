@@ -5,6 +5,7 @@ use crate::object::{ObjFunction, ObjString};
 use crate::opcode::OpCode;
 use crate::token::{Kind, Span};
 use crate::value::Value;
+use std::collections::VecDeque;
 use std::io::Write;
 
 #[derive(Debug)]
@@ -24,15 +25,8 @@ impl ReportableError for CompilationError {
 
 #[derive(Debug)]
 pub struct Compiler<'a, W: Write> {
-    locals: Vec<Local>,
-    scope_depth: usize,
+    frames: VecDeque<Frame>,
     output_stream: &'a mut W,
-}
-
-#[derive(Debug)]
-struct Local {
-    name: String,
-    depth: usize,
 }
 
 pub fn compile<W: Write>(
@@ -42,33 +36,25 @@ pub fn compile<W: Write>(
     let mut compiler = Compiler::new(output_stream);
     let mut bin = Executable::new(String::from("script"));
 
-    match compiler.compile_into(program, &mut bin) {
-        Ok(..) => Ok(ObjFunction {
-            arity: 0,
-            bin,
-            name: Box::new(ObjString::from("script")),
-        }),
-        Err(e) => Err(e),
+    for node in program {
+        compiler.compile_node(&mut bin, &node)?;
     }
+
+    Ok(ObjFunction {
+        arity: 0,
+        bin,
+        name: Box::new(ObjString::from("script")),
+    })
 }
 
 impl<'a, W: Write> Compiler<'a, W> {
     pub fn new(output_stream: &'a mut W) -> Self {
+        let mut scopes = VecDeque::new();
+        scopes.push_back(Frame::new(true));
         Compiler {
-            locals: vec![],
-            scope_depth: 0,
+            frames: scopes,
             output_stream,
         }
-    }
-    pub fn compile_into(
-        &mut self,
-        program: Vec<SpannedAstNode>,
-        bin: &mut Executable,
-    ) -> Result<(), CompilationError> {
-        for node in program {
-            self.compile_node(bin, &node)?;
-        }
-        Ok(())
     }
 
     fn compile_node(
@@ -99,13 +85,13 @@ impl<'a, W: Write> Compiler<'a, W> {
                     bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
                 }
 
-                if self.scope_depth == 0 {
+                if self.frames.back().unwrap().is_global() {
                     bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
                     bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
                     bin.push_opcode(OpCode::Pop, node_span);
                 } else {
-                    if let Some(local) = self.resolve_local(name) {
-                        if local.0.depth == self.scope_depth {
+                    if let Some((_, distance)) = self.frames.back().unwrap().resolve(name) {
+                        if distance == 0 {
                             return Err(CompilationError {
                                 message: format!("Redeclaration of local variable {}", name),
                                 span: node_span,
@@ -113,22 +99,19 @@ impl<'a, W: Write> Compiler<'a, W> {
                         }
                     }
 
-                    self.locals.push(Local {
-                        name: name.clone(),
-                        depth: self.scope_depth,
-                    });
+                    self.frames.back_mut().unwrap().add_local(name);
                 }
             }
             AstNode::Block {
                 declarations,
                 rbrace,
             } => {
-                self.begin_scope();
+                self.frames.back_mut().unwrap().begin_scope();
                 for statement in declarations.iter() {
                     self.compile_node(bin, statement)?
                 }
 
-                self.end_scope(bin, rbrace.span);
+                self.frames.back_mut().unwrap().end_scope(bin, rbrace.span);
             }
             AstNode::If {
                 condition,
@@ -194,7 +177,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                 update,
                 block,
             } => {
-                self.begin_scope();
+                self.frames.back_mut().unwrap().begin_scope();
                 if let Some(initializer) = initializer {
                     self.compile_node(bin, initializer)?;
                 }
@@ -232,24 +215,19 @@ impl<'a, W: Write> Compiler<'a, W> {
                     bin.replace_u16(jump_to_end_index, bin.len() as u16);
                 }
                 bin.push_opcode(OpCode::Pop, node_span);
-                self.end_scope(bin, block.span);
+                self.frames.back_mut().unwrap().end_scope(bin, block.span);
             }
             AstNode::FunDeclaration {
                 name,
                 parameters,
                 body,
             } => {
-                // Empty the list of locals
-                let mut locals_backup: Vec<Local> = self.locals.drain(0..).collect();
-                self.begin_scope();
+                self.frames.push_back(Frame::new(false));
 
                 // Add the parameters to the list of Locals
                 for param in parameters.iter() {
                     if let Kind::IdentifierLiteral(param_name) = &param.kind {
-                        self.locals.push(Local {
-                            name: param_name.clone(),
-                            depth: self.scope_depth,
-                        });
+                        self.frames.back_mut().unwrap().add_local(param_name);
                     } else {
                         return Err(CompilationError {
                             message: "Expected parameter name to be IdentifierLiteral".to_string(),
@@ -272,8 +250,11 @@ impl<'a, W: Write> Compiler<'a, W> {
                 }
 
                 // End the scope and restore the outer function's locals
-                self.end_scope(&mut function_binary, body.span);
-                self.locals = locals_backup.drain(0..).collect();
+                self.frames
+                    .back_mut()
+                    .unwrap()
+                    .end_scope(&mut function_binary, body.span);
+                self.frames.pop_back();
 
                 // Put the function object on the top of the stack and create a closure
                 let value = Value::from(ObjFunction {
@@ -285,15 +266,12 @@ impl<'a, W: Write> Compiler<'a, W> {
 
                 // Assign the function to the variable of the matching name
                 let name_value = Value::from(name.clone());
-                if self.scope_depth == 0 {
+                if self.frames.back().unwrap().is_global() {
                     bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
                     bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
                     bin.push_opcode(OpCode::Pop, node_span);
                 } else {
-                    self.locals.push(Local {
-                        name: name.clone(),
-                        depth: self.scope_depth,
-                    });
+                    self.frames.back_mut().unwrap().add_local(name);
                 }
             }
             AstNode::Return { value } => {
@@ -359,8 +337,8 @@ impl<'a, W: Write> Compiler<'a, W> {
             AstNode::Assignment { lvalue, rvalue, .. } => {
                 if let Some(AstNode::Variable { name }) = &lvalue.node {
                     self.compile_node(bin, rvalue)?;
-                    match self.resolve_local(name) {
-                        Some((_, index)) => {
+                    match self.frames.back_mut().unwrap().resolve(name) {
+                        Some((index, _)) => {
                             bin.push_opcode(OpCode::SetLocal, lvalue.span);
                             bin.push_u8(index as u8, lvalue.span);
                         }
@@ -376,8 +354,8 @@ impl<'a, W: Write> Compiler<'a, W> {
                     });
                 }
             }
-            AstNode::Variable { name } => match self.resolve_local(name) {
-                Some((_, index)) => {
+            AstNode::Variable { name } => match self.frames.back_mut().unwrap().resolve(name) {
+                Some((index, _)) => {
                     bin.push_opcode(OpCode::GetLocal, node_span);
                     bin.push_u8(index as u8, node_span);
                 }
@@ -398,31 +376,6 @@ impl<'a, W: Write> Compiler<'a, W> {
 
         Ok(())
     }
-
-    fn resolve_local(&self, name: &str) -> Option<(&Local, usize)> {
-        for (index, local) in self.locals.iter().rev().enumerate() {
-            if local.name == name {
-                return Some((&local, self.locals.len() - index - 1));
-            }
-        }
-        None
-    }
-
-    fn begin_scope(&mut self) {
-        self.scope_depth += 1;
-    }
-
-    fn end_scope(&mut self, bin: &mut Executable, end_span: Span) {
-        while let Some(local) = self.locals.last() {
-            if local.depth == self.scope_depth {
-                bin.push_opcode(OpCode::Pop, end_span);
-                self.locals.pop();
-            } else {
-                break;
-            }
-        }
-        self.scope_depth -= 1;
-    }
 }
 
 fn destructure_node(node: &SpannedAstNode) -> Result<(&AstNode, Span), CompilationError> {
@@ -437,5 +390,86 @@ fn destructure_node(node: &SpannedAstNode) -> Result<(&AstNode, Span), Compilati
             message: "Attempted to compile SpannedAstNode with node: None".to_string(),
             span: node.span,
         })
+    }
+}
+
+/// A record of all the variables declared in a single scope
+#[derive(Debug)]
+struct LocalScope {
+    pub offset: usize,
+    locals: Vec<String>,
+}
+
+impl LocalScope {
+    fn new(offset: usize) -> Self {
+        LocalScope {
+            locals: vec![],
+            offset,
+        }
+    }
+
+    fn resolve(&self, name: &str) -> Option<usize> {
+        for (index, n) in self.locals.iter().enumerate() {
+            if name == n {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    fn push(&mut self, name: String) {
+        self.locals.push(name);
+    }
+
+    fn len(&self) -> usize {
+        self.locals.len()
+    }
+}
+
+/// A record of all the variables declared in a single function
+#[derive(Debug)]
+struct Frame {
+    scopes: VecDeque<LocalScope>,
+    is_global: bool,
+}
+
+impl Frame {
+    fn new(is_global: bool) -> Self {
+        let mut scopes = VecDeque::new();
+        scopes.push_back(LocalScope::new(0));
+        Frame { scopes, is_global }
+    }
+
+    fn add_local(&mut self, name: &str) {
+        self.scopes.back_mut().unwrap().push(name.to_string());
+    }
+
+    /// Resolves a local to (offset from frame pointer, distance to scope)
+    fn resolve(&self, name: &str) -> Option<(usize, usize)> {
+        for (distance, scope) in self.scopes.iter().rev().enumerate() {
+            if let Some(offset) = scope.resolve(name) {
+                return Some((offset + scope.offset, distance));
+            }
+        }
+        None
+    }
+
+    fn is_global(&self) -> bool {
+        self.is_global && self.scopes.len() == 1
+    }
+
+    fn begin_scope(&mut self) {
+        let new_scope = match self.scopes.back() {
+            Some(parent) => LocalScope::new(parent.offset + parent.len()),
+            None => LocalScope::new(0),
+        };
+        self.scopes.push_back(new_scope)
+    }
+
+    fn end_scope(&mut self, bin: &mut Executable, end_span: Span) {
+        for _ in 0..self.scopes.back().unwrap().len() {
+            bin.push_opcode(OpCode::Pop, end_span);
+        }
+        self.scopes.pop_back();
     }
 }

@@ -519,7 +519,7 @@ fn function_recursive() {
 }
 
 #[test]
-fn closure() {
+fn closure_1() {
     let source = "
     fun adder(a) {
         fun f(b) {
@@ -536,6 +536,31 @@ fn closure() {
     let expected_stderr = "".trim();
     let expected_stdout = "
 3
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
+
+#[test]
+fn closure_2() {
+    let source = "
+    fun foo(f) {
+        fun bar(b) {
+            return f + b;
+        }
+        return bar(3);
+    }
+    print foo(5);
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+8
     "
     .trim();
 
