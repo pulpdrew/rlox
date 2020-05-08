@@ -1,4 +1,4 @@
-use crate::ast::{AstNode, Expression, Statement};
+use crate::ast::{AstNode, SpannedAstNode};
 use crate::error::ReportableError;
 use crate::scanner::Scanner;
 use crate::token::{Kind, Span, Token};
@@ -39,7 +39,7 @@ impl Parser {
     }
 
     /// Parse the source into a program - a list of declaratation `AstNode`s
-    pub fn parse_program(&mut self) -> Result<Vec<AstNode>, Vec<ParsingError>> {
+    pub fn parse_program(&mut self) -> Result<Vec<SpannedAstNode>, Vec<ParsingError>> {
         let mut program = vec![];
         let mut errors = vec![];
 
@@ -60,7 +60,7 @@ impl Parser {
         }
     }
 
-    fn declaration(&mut self) -> Result<AstNode, ParsingError> {
+    fn declaration(&mut self) -> Result<SpannedAstNode, ParsingError> {
         match self.current.kind {
             Kind::Var => self.var_declaration(),
             Kind::Fun => {
@@ -83,7 +83,7 @@ impl Parser {
         }
     }
 
-    fn var_declaration(&mut self) -> Result<AstNode, ParsingError> {
+    fn var_declaration(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.advance();
         let (name, _) = self.id_token()?;
 
@@ -97,8 +97,8 @@ impl Parser {
 
         let semi = self.eat(Kind::Semicolon, "Expected ';' after declaration.")?;
         let span = Span::merge(vec![&keyword.span, &semi.span]);
-        Ok(AstNode::new_statement(
-            Statement::Declaration { name, initializer },
+        Ok(SpannedAstNode::new(
+            AstNode::Declaration { name, initializer },
             span,
         ))
     }
@@ -122,7 +122,7 @@ impl Parser {
         Ok(parameters)
     }
 
-    fn function(&mut self) -> Result<AstNode, ParsingError> {
+    fn function(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let (name, name_span) = self.id_token()?;
         self.eat(Kind::LeftParen, "Expected '(' after function name")?;
 
@@ -141,8 +141,8 @@ impl Parser {
         let body = self.block_statement()?;
         let span = Span::merge(vec![&name_span, &body.span]);
 
-        Ok(AstNode::new_statement(
-            Statement::FunDeclaration {
+        Ok(SpannedAstNode::new(
+            AstNode::FunDeclaration {
                 name,
                 parameters,
                 body: Box::new(body),
@@ -151,7 +151,7 @@ impl Parser {
         ))
     }
 
-    fn statement(&mut self) -> Result<AstNode, ParsingError> {
+    fn statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         match self.current.kind {
             Kind::Print => self.print_statement(),
             Kind::LeftBrace => self.block_statement(),
@@ -163,19 +163,19 @@ impl Parser {
         }
     }
 
-    fn expression_statement(&mut self) -> Result<AstNode, ParsingError> {
+    fn expression_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let expression = self.expression()?;
         let semi = self.eat(Kind::Semicolon, "Expected ';' after expression")?;
         let new_span = Span::merge(vec![&expression.span, &semi.span]);
-        Ok(AstNode::new_statement(
-            Statement::Expression {
+        Ok(SpannedAstNode::new(
+            AstNode::ExpressionStmt {
                 expression: Box::new(expression),
             },
             new_span,
         ))
     }
 
-    fn return_statement(&mut self) -> Result<AstNode, ParsingError> {
+    fn return_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.advance();
 
         let (value, span) = match self.current.kind {
@@ -188,10 +188,10 @@ impl Parser {
         };
 
         self.eat(Kind::Semicolon, "Expected ';' after return statement.")?;
-        Ok(AstNode::new_statement(Statement::Return { value }, span))
+        Ok(SpannedAstNode::new(AstNode::Return { value }, span))
     }
 
-    fn for_statement(&mut self) -> Result<AstNode, ParsingError> {
+    fn for_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.advance();
         self.eat(Kind::LeftParen, "Expected '(' after 'for.'")?;
 
@@ -221,8 +221,8 @@ impl Parser {
         let block = self.statement()?;
         let span = Span::merge(vec![&keyword.span, &block.span]);
 
-        Ok(AstNode::new_statement(
-            Statement::For {
+        Ok(SpannedAstNode::new(
+            AstNode::For {
                 initializer,
                 condition,
                 update,
@@ -232,7 +232,7 @@ impl Parser {
         ))
     }
 
-    fn while_statement(&mut self) -> Result<AstNode, ParsingError> {
+    fn while_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.advance();
         self.eat(Kind::LeftParen, "Expected '(' after 'while.'")?;
 
@@ -242,8 +242,8 @@ impl Parser {
         let block = self.statement()?;
         let span = Span::merge(vec![&keyword.span, &block.span]);
 
-        Ok(AstNode::new_statement(
-            Statement::While {
+        Ok(SpannedAstNode::new(
+            AstNode::While {
                 condition: Box::new(condition),
                 block: Box::new(block),
             },
@@ -251,7 +251,7 @@ impl Parser {
         ))
     }
 
-    fn if_statement(&mut self) -> Result<AstNode, ParsingError> {
+    fn if_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.advance();
         self.eat(Kind::LeftParen, "Expected '(' after 'if.'")?;
         let condition = self.expression()?;
@@ -270,8 +270,8 @@ impl Parser {
             None
         };
 
-        Ok(AstNode::new_statement(
-            Statement::If {
+        Ok(SpannedAstNode::new(
+            AstNode::If {
                 condition: Box::new(condition),
                 if_block: Box::new(if_block),
                 else_block,
@@ -280,7 +280,7 @@ impl Parser {
         ))
     }
 
-    fn block_statement(&mut self) -> Result<AstNode, ParsingError> {
+    fn block_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let lbrace = self.advance();
 
         let mut declarations = vec![];
@@ -293,8 +293,8 @@ impl Parser {
 
         let rbrace = self.eat(Kind::RightBrace, "Expected '}' after block statement")?;
         let new_span = Span::merge(vec![&lbrace.span, &rbrace.span]);
-        Ok(AstNode::new_statement(
-            Statement::Block {
+        Ok(SpannedAstNode::new(
+            AstNode::Block {
                 declarations,
                 rbrace,
             },
@@ -302,24 +302,24 @@ impl Parser {
         ))
     }
 
-    fn print_statement(&mut self) -> Result<AstNode, ParsingError> {
+    fn print_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.advance();
         let expression = self.expression()?;
         let semi = self.eat(Kind::Semicolon, "Expected ';' after print statement")?;
         let new_span = Span::merge(vec![&keyword.span, &expression.span, &semi.span]);
-        Ok(AstNode::new_statement(
-            Statement::Print {
+        Ok(SpannedAstNode::new(
+            AstNode::Print {
                 expression: Box::new(expression),
             },
             new_span,
         ))
     }
 
-    fn expression(&mut self) -> Result<AstNode, ParsingError> {
+    fn expression(&mut self) -> Result<SpannedAstNode, ParsingError> {
         self.assignment()
     }
 
-    fn assignment(&mut self) -> Result<AstNode, ParsingError> {
+    fn assignment(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let node = self.logic_or()?;
 
         if self.current.kind == Kind::Equal {
@@ -327,8 +327,8 @@ impl Parser {
             let rvalue = self.assignment()?;
             let new_span = Span::merge(vec![&node.span, &rvalue.span]);
 
-            Ok(AstNode::new_expression(
-                Expression::Assignment {
+            Ok(SpannedAstNode::new(
+                AstNode::Assignment {
                     lvalue: Box::new(node),
                     rvalue: Box::new(rvalue),
                 },
@@ -339,23 +339,23 @@ impl Parser {
         }
     }
 
-    fn logic_or(&mut self) -> Result<AstNode, ParsingError> {
+    fn logic_or(&mut self) -> Result<SpannedAstNode, ParsingError> {
         self.logic_and()
     }
 
-    fn logic_and(&mut self) -> Result<AstNode, ParsingError> {
+    fn logic_and(&mut self) -> Result<SpannedAstNode, ParsingError> {
         self.equality()
     }
 
-    fn equality(&mut self) -> Result<AstNode, ParsingError> {
+    fn equality(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let mut node = self.comparison()?;
         while let Kind::EqualEqual | Kind::BangEqual = self.current.kind {
             let operator = self.advance();
             let right = self.comparison()?;
             let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
 
-            node = AstNode::new_expression(
-                Expression::Binary {
+            node = SpannedAstNode::new(
+                AstNode::Binary {
                     left: Box::new(node),
                     operator,
                     right: Box::new(right),
@@ -366,7 +366,7 @@ impl Parser {
         Ok(node)
     }
 
-    fn comparison(&mut self) -> Result<AstNode, ParsingError> {
+    fn comparison(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let mut node = self.addition()?;
         while let Kind::Less | Kind::LessEqual | Kind::Greater | Kind::GreaterEqual =
             self.current.kind
@@ -375,8 +375,8 @@ impl Parser {
             let right = self.addition()?;
             let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
 
-            node = AstNode::new_expression(
-                Expression::Binary {
+            node = SpannedAstNode::new(
+                AstNode::Binary {
                     left: Box::new(node),
                     operator,
                     right: Box::new(right),
@@ -387,7 +387,7 @@ impl Parser {
         Ok(node)
     }
 
-    fn addition(&mut self) -> Result<AstNode, ParsingError> {
+    fn addition(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let mut node = self.multiplication()?;
 
         while self.current.kind == Kind::Plus || self.current.kind == Kind::Minus {
@@ -395,8 +395,8 @@ impl Parser {
             let right = self.multiplication()?;
             let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
 
-            node = AstNode::new_expression(
-                Expression::Binary {
+            node = SpannedAstNode::new(
+                AstNode::Binary {
                     left: Box::new(node),
                     operator,
                     right: Box::new(right),
@@ -408,7 +408,7 @@ impl Parser {
         Ok(node)
     }
 
-    fn multiplication(&mut self) -> Result<AstNode, ParsingError> {
+    fn multiplication(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let mut node = self.unary()?;
 
         while self.current.kind == Kind::Star || self.current.kind == Kind::Slash {
@@ -416,8 +416,8 @@ impl Parser {
             let right = self.unary()?;
             let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
 
-            node = AstNode::new_expression(
-                Expression::Binary {
+            node = SpannedAstNode::new(
+                AstNode::Binary {
                     left: Box::new(node),
                     operator,
                     right: Box::new(right),
@@ -429,15 +429,15 @@ impl Parser {
         Ok(node)
     }
 
-    fn unary(&mut self) -> Result<AstNode, ParsingError> {
+    fn unary(&mut self) -> Result<SpannedAstNode, ParsingError> {
         match self.current.kind {
             Kind::Minus | Kind::Bang => {
                 let operator = self.advance();
                 let expression = self.unary()?;
                 let new_span = Span::new(expression.span.start - 1, expression.span.end);
 
-                Ok(AstNode::new_expression(
-                    Expression::Unary {
+                Ok(SpannedAstNode::new(
+                    AstNode::Unary {
                         operator,
                         expression: Box::new(expression),
                     },
@@ -448,7 +448,7 @@ impl Parser {
         }
     }
 
-    fn argument_list(&mut self) -> Result<Vec<AstNode>, ParsingError> {
+    fn argument_list(&mut self) -> Result<Vec<SpannedAstNode>, ParsingError> {
         let mut args = vec![];
         args.push(self.expression()?);
         while self.current.kind == Kind::Comma {
@@ -459,7 +459,7 @@ impl Parser {
         Ok(args)
     }
 
-    fn call(&mut self) -> Result<AstNode, ParsingError> {
+    fn call(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let primary = self.primary()?;
 
         if self.current.kind == Kind::LeftParen {
@@ -474,8 +474,8 @@ impl Parser {
 
             let new_span = Span::merge(vec![&primary.span, &rparen.span]);
 
-            Ok(AstNode::new_expression(
-                Expression::Call {
+            Ok(SpannedAstNode::new(
+                AstNode::Call {
                     target: Box::new(primary),
                     arguments,
                 },
@@ -486,29 +486,29 @@ impl Parser {
         }
     }
 
-    fn primary(&mut self) -> Result<AstNode, ParsingError> {
+    fn primary(&mut self) -> Result<SpannedAstNode, ParsingError> {
         match self.current.clone().kind {
             Kind::LeftParen => {
                 let lparen = self.advance();
                 let expression = self.expression()?;
                 let rparen = self.eat(Kind::RightParen, "Expected ')' after expression.")?;
                 let new_span = Span::merge(vec![&lparen.span, &expression.span, &rparen.span]);
-                Ok(AstNode::new_ast_node(expression, new_span))
+                Ok(SpannedAstNode::respan(expression, new_span))
             }
-            Kind::IdentifierLiteral(name) => Ok(AstNode::new_expression(
-                Expression::Variable { name },
+            Kind::IdentifierLiteral(name) => Ok(SpannedAstNode::new(
+                AstNode::Variable { name },
                 self.advance().span,
             )),
             Kind::NumberLiteral(_) => self.number(),
             Kind::StringLiteral(_) => self.string(),
-            Kind::True => Ok(AstNode::new_expression(
-                Expression::Constant {
+            Kind::True => Ok(SpannedAstNode::new(
+                AstNode::Constant {
                     value: Value::Bool(true),
                 },
                 self.advance().span,
             )),
-            Kind::False => Ok(AstNode::new_expression(
-                Expression::Constant {
+            Kind::False => Ok(SpannedAstNode::new(
+                AstNode::Constant {
                     value: Value::Bool(false),
                 },
                 self.advance().span,
@@ -516,8 +516,8 @@ impl Parser {
             Kind::Nil => {
                 let literal = self.advance();
                 let span = literal.span;
-                Ok(AstNode::new_expression(
-                    Expression::Constant { value: Value::Nil },
+                Ok(SpannedAstNode::new(
+                    AstNode::Constant { value: Value::Nil },
                     span,
                 ))
             }
@@ -528,12 +528,12 @@ impl Parser {
         }
     }
 
-    fn number(&mut self) -> Result<AstNode, ParsingError> {
+    fn number(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let Token { kind, span } = self.advance();
 
         if let Kind::NumberLiteral(n) = kind {
-            Ok(AstNode::new_expression(
-                Expression::Constant {
+            Ok(SpannedAstNode::new(
+                AstNode::Constant {
                     value: Value::from(n),
                 },
                 span,
@@ -546,11 +546,11 @@ impl Parser {
         }
     }
 
-    fn string(&mut self) -> Result<AstNode, ParsingError> {
+    fn string(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let Token { kind, span } = self.advance();
         if let Kind::StringLiteral(s) = kind {
-            Ok(AstNode::new_expression(
-                Expression::Constant {
+            Ok(SpannedAstNode::new(
+                AstNode::Constant {
                     value: Value::from(s),
                 },
                 span,

@@ -1,4 +1,4 @@
-use crate::ast::{AstNode, Expression, Statement};
+use crate::ast::{AstNode, SpannedAstNode};
 use crate::error::ReportableError;
 use crate::executable::Executable;
 use crate::object::{ObjFunction, ObjString};
@@ -24,7 +24,6 @@ impl ReportableError for CompilationError {
 
 #[derive(Debug)]
 pub struct Compiler<'a, W: Write> {
-    function: Option<ObjFunction>,
     locals: Vec<Local>,
     scope_depth: usize,
     output_stream: &'a mut W,
@@ -37,7 +36,7 @@ struct Local {
 }
 
 pub fn compile<W: Write>(
-    program: Vec<AstNode>,
+    program: Vec<SpannedAstNode>,
     output_stream: &mut W,
 ) -> Result<ObjFunction, CompilationError> {
     let mut compiler = Compiler::new(output_stream);
@@ -56,7 +55,6 @@ pub fn compile<W: Write>(
 impl<'a, W: Write> Compiler<'a, W> {
     pub fn new(output_stream: &'a mut W) -> Self {
         Compiler {
-            function: None,
             locals: vec![],
             scope_depth: 0,
             output_stream,
@@ -64,55 +62,53 @@ impl<'a, W: Write> Compiler<'a, W> {
     }
     pub fn compile_into(
         &mut self,
-        program: Vec<AstNode>,
+        program: Vec<SpannedAstNode>,
         bin: &mut Executable,
     ) -> Result<(), CompilationError> {
         for node in program {
-            self.compile_statement(bin, &node)?;
+            self.compile_node(bin, &node)?;
         }
         Ok(())
     }
 
-    fn compile_statement(
+    fn compile_node(
         &mut self,
         bin: &mut Executable,
-        statement_node: &AstNode,
+        spanned_node: &SpannedAstNode,
     ) -> Result<(), CompilationError> {
-        match statement_node.statement() {
-            Statement::Expression { expression } => {
-                self.compile_expression(bin, expression)?;
+        let (node, node_span) = destructure_node(spanned_node)?;
+
+        match node {
+            AstNode::ExpressionStmt { expression } => {
+                self.compile_node(bin, expression)?;
                 bin.push_opcode(OpCode::Pop, expression.span);
             }
-            Statement::Print { expression, .. } => {
-                self.compile_expression(bin, expression)?;
-                bin.push_opcode(OpCode::Print, statement_node.span);
+            AstNode::Print { expression, .. } => {
+                self.compile_node(bin, expression)?;
+                bin.push_opcode(OpCode::Print, node_span);
             }
-            Statement::Declaration {
+            AstNode::Declaration {
                 name, initializer, ..
             } => {
                 let name_value = Value::from(name.clone());
 
                 // Leave the initial value of the variable on the top of the stack
                 if let Some(init_expression) = initializer {
-                    self.compile_expression(bin, init_expression)?;
+                    self.compile_node(bin, init_expression)?;
                 } else {
-                    bin.push_constant_inst(OpCode::Constant, Value::Nil, statement_node.span);
+                    bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
                 }
 
                 if self.scope_depth == 0 {
-                    bin.push_constant_inst(
-                        OpCode::DeclareGlobal,
-                        name_value.clone(),
-                        statement_node.span,
-                    );
-                    bin.push_constant_inst(OpCode::SetGlobal, name_value, statement_node.span);
-                    bin.push_opcode(OpCode::Pop, statement_node.span);
+                    bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
+                    bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
+                    bin.push_opcode(OpCode::Pop, node_span);
                 } else {
                     if let Some(local) = self.resolve_local(name) {
                         if local.0.depth == self.scope_depth {
                             return Err(CompilationError {
                                 message: format!("Redeclaration of local variable {}", name),
-                                span: statement_node.span,
+                                span: node_span,
                             });
                         }
                     }
@@ -123,76 +119,76 @@ impl<'a, W: Write> Compiler<'a, W> {
                     });
                 }
             }
-            Statement::Block {
+            AstNode::Block {
                 declarations,
                 rbrace,
             } => {
                 self.begin_scope();
                 for statement in declarations.iter() {
-                    self.compile_statement(bin, statement)?
+                    self.compile_node(bin, statement)?
                 }
 
                 self.end_scope(bin, rbrace.span);
             }
-            Statement::If {
+            AstNode::If {
                 condition,
                 if_block,
                 else_block,
                 ..
             } => {
-                self.compile_expression(bin, condition)?;
-                bin.push_opcode(OpCode::JumpIfFalse, statement_node.span);
+                self.compile_node(bin, condition)?;
+                bin.push_opcode(OpCode::JumpIfFalse, node_span);
                 let first_jump = bin.len();
-                bin.push_u16(0 as u16, statement_node.span);
-                bin.push_opcode(OpCode::Pop, statement_node.span);
-                self.compile_statement(bin, if_block)?;
+                bin.push_u16(0 as u16, node_span);
+                bin.push_opcode(OpCode::Pop, node_span);
+                self.compile_node(bin, if_block)?;
 
                 if bin.len() > u16::max_value() as usize {
                     return Err(CompilationError {
                         message: format!("Binary may not be more than {} bytes long.", bin.len()),
-                        span: statement_node.span,
+                        span: node_span,
                     });
                 }
 
-                bin.push_opcode(OpCode::Jump, statement_node.span);
+                bin.push_opcode(OpCode::Jump, node_span);
                 let second_jump = bin.len();
-                bin.push_u16(0 as u16, statement_node.span);
+                bin.push_u16(0 as u16, node_span);
                 bin.replace_u16(first_jump, bin.len() as u16);
-                bin.push_opcode(OpCode::Pop, statement_node.span);
+                bin.push_opcode(OpCode::Pop, node_span);
 
                 if let Some(else_block) = else_block {
-                    self.compile_statement(bin, else_block)?;
+                    self.compile_node(bin, else_block)?;
                 }
 
                 if bin.len() > u16::max_value() as usize {
                     return Err(CompilationError {
                         message: format!("Binary may not be more than {} bytes long.", bin.len()),
-                        span: statement_node.span,
+                        span: node_span,
                     });
                 }
                 bin.replace_u16(second_jump, bin.len() as u16);
             }
-            Statement::While { condition, block } => {
+            AstNode::While { condition, block } => {
                 let condition_index = bin.len() as u16;
-                self.compile_expression(bin, condition)?;
-                bin.push_opcode(OpCode::JumpIfFalse, statement_node.span);
+                self.compile_node(bin, condition)?;
+                bin.push_opcode(OpCode::JumpIfFalse, node_span);
                 let jump_to_end_index = bin.len();
-                bin.push_u16(0, statement_node.span);
-                bin.push_opcode(OpCode::Pop, statement_node.span);
-                self.compile_statement(bin, block)?;
-                bin.push_opcode(OpCode::Jump, statement_node.span);
-                bin.push_u16(condition_index, statement_node.span);
+                bin.push_u16(0, node_span);
+                bin.push_opcode(OpCode::Pop, node_span);
+                self.compile_node(bin, block)?;
+                bin.push_opcode(OpCode::Jump, node_span);
+                bin.push_u16(condition_index, node_span);
 
                 if bin.len() > u16::max_value() as usize {
                     return Err(CompilationError {
                         message: format!("Binary may not be more than {} bytes long.", bin.len()),
-                        span: statement_node.span,
+                        span: node_span,
                     });
                 }
                 bin.replace_u16(jump_to_end_index, bin.len() as u16);
-                bin.push_opcode(OpCode::Pop, statement_node.span);
+                bin.push_opcode(OpCode::Pop, node_span);
             }
-            Statement::For {
+            AstNode::For {
                 initializer,
                 condition,
                 update,
@@ -200,28 +196,28 @@ impl<'a, W: Write> Compiler<'a, W> {
             } => {
                 self.begin_scope();
                 if let Some(initializer) = initializer {
-                    self.compile_statement(bin, initializer)?;
+                    self.compile_node(bin, initializer)?;
                 }
 
                 let condition_index = bin.len() as u16;
                 let jump_to_end_index = if let Some(condition) = condition {
-                    self.compile_expression(bin, condition)?;
-                    bin.push_opcode(OpCode::JumpIfFalse, statement_node.span);
+                    self.compile_node(bin, condition)?;
+                    bin.push_opcode(OpCode::JumpIfFalse, node_span);
                     let jump_to_end_index = bin.len();
-                    bin.push_u16(0, statement_node.span);
+                    bin.push_u16(0, node_span);
                     bin.push_opcode(OpCode::Pop, condition.span);
                     jump_to_end_index
                 } else {
                     0
                 };
 
-                self.compile_statement(bin, block)?;
+                self.compile_node(bin, block)?;
                 if let Some(update) = update {
-                    self.compile_expression(bin, update)?;
+                    self.compile_node(bin, update)?;
                     bin.push_opcode(OpCode::Pop, update.span);
                 }
-                bin.push_opcode(OpCode::Jump, statement_node.span);
-                bin.push_u16(condition_index, statement_node.span);
+                bin.push_opcode(OpCode::Jump, node_span);
+                bin.push_u16(condition_index, node_span);
 
                 if condition.is_some() {
                     if bin.len() > u16::max_value() as usize {
@@ -230,15 +226,15 @@ impl<'a, W: Write> Compiler<'a, W> {
                                 "Binary may not be more than {} bytes long.",
                                 bin.len()
                             ),
-                            span: statement_node.span,
+                            span: node_span,
                         });
                     }
                     bin.replace_u16(jump_to_end_index, bin.len() as u16);
                 }
-                bin.push_opcode(OpCode::Pop, statement_node.span);
+                bin.push_opcode(OpCode::Pop, node_span);
                 self.end_scope(bin, block.span);
             }
-            Statement::FunDeclaration {
+            AstNode::FunDeclaration {
                 name,
                 parameters,
                 body,
@@ -264,14 +260,10 @@ impl<'a, W: Write> Compiler<'a, W> {
 
                 // Compile the function body
                 let mut function_binary = Executable::new(name.clone());
-                self.compile_statement(&mut function_binary, body)?;
+                self.compile_node(&mut function_binary, body)?;
 
                 // Always add return nil; to the end in case there is no explicit return statement
-                function_binary.push_constant_inst(
-                    OpCode::Constant,
-                    Value::Nil,
-                    statement_node.span,
-                );
+                function_binary.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
                 function_binary.push_opcode(OpCode::Return, body.span);
 
                 if cfg!(feature = "disassemble") {
@@ -289,18 +281,14 @@ impl<'a, W: Write> Compiler<'a, W> {
                     arity: parameters.len() as u8,
                     bin: function_binary,
                 });
-                bin.push_constant_inst(OpCode::Closure, value, statement_node.span);
+                bin.push_constant_inst(OpCode::Closure, value, node_span);
 
                 // Assign the function to the variable of the matching name
                 let name_value = Value::from(name.clone());
                 if self.scope_depth == 0 {
-                    bin.push_constant_inst(
-                        OpCode::DeclareGlobal,
-                        name_value.clone(),
-                        statement_node.span,
-                    );
-                    bin.push_constant_inst(OpCode::SetGlobal, name_value, statement_node.span);
-                    bin.push_opcode(OpCode::Pop, statement_node.span);
+                    bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
+                    bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
+                    bin.push_opcode(OpCode::Pop, node_span);
                 } else {
                     self.locals.push(Local {
                         name: name.clone(),
@@ -308,40 +296,29 @@ impl<'a, W: Write> Compiler<'a, W> {
                     });
                 }
             }
-            Statement::Return { value } => {
+            AstNode::Return { value } => {
                 match value {
                     Some(expression) => {
-                        self.compile_expression(bin, expression)?;
+                        self.compile_node(bin, expression)?;
                     }
                     None => {
-                        bin.push_constant_inst(OpCode::Constant, Value::Nil, statement_node.span);
+                        bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
                     }
                 }
 
-                bin.push_opcode(OpCode::Return, statement_node.span)
+                bin.push_opcode(OpCode::Return, node_span)
             }
-        };
-
-        Ok(())
-    }
-
-    fn compile_expression(
-        &mut self,
-        bin: &mut Executable,
-        expression_node: &AstNode,
-    ) -> Result<(), CompilationError> {
-        match expression_node.expression() {
-            Expression::Constant { value } => {
-                bin.push_constant_inst(OpCode::Constant, value.clone(), expression_node.span);
+            AstNode::Constant { value } => {
+                bin.push_constant_inst(OpCode::Constant, value.clone(), node_span);
             }
-            Expression::Unary {
+            AstNode::Unary {
                 operator,
                 expression,
             } => {
-                self.compile_expression(bin, expression)?;
+                self.compile_node(bin, expression)?;
                 match operator.kind {
-                    Kind::Minus => bin.push_opcode(OpCode::Negate, expression_node.span),
-                    Kind::Bang => bin.push_opcode(OpCode::Not, expression_node.span),
+                    Kind::Minus => bin.push_opcode(OpCode::Negate, node_span),
+                    Kind::Bang => bin.push_opcode(OpCode::Not, node_span),
                     _ => {
                         return Err(CompilationError {
                             message: format!("Invalid unary operator {:?}", operator),
@@ -350,28 +327,26 @@ impl<'a, W: Write> Compiler<'a, W> {
                     }
                 }
             }
-            Expression::Binary {
+            AstNode::Binary {
                 left,
                 operator,
                 right,
             } => {
-                self.compile_expression(bin, left)?;
-                self.compile_expression(bin, right)?;
+                self.compile_node(bin, left)?;
+                self.compile_node(bin, right)?;
                 match operator.kind {
-                    Kind::Plus => bin.push_opcode(OpCode::Add, expression_node.span),
-                    Kind::Minus => bin.push_opcode(OpCode::Subtract, expression_node.span),
-                    Kind::Star => bin.push_opcode(OpCode::Multiply, expression_node.span),
-                    Kind::Slash => bin.push_opcode(OpCode::Divide, expression_node.span),
-                    Kind::Less => bin.push_opcode(OpCode::Less, expression_node.span),
-                    Kind::LessEqual => bin.push_opcode(OpCode::LessEqual, expression_node.span),
-                    Kind::Greater => bin.push_opcode(OpCode::Greater, expression_node.span),
-                    Kind::GreaterEqual => {
-                        bin.push_opcode(OpCode::GreaterEqual, expression_node.span)
-                    }
-                    Kind::EqualEqual => bin.push_opcode(OpCode::Equal, expression_node.span),
+                    Kind::Plus => bin.push_opcode(OpCode::Add, node_span),
+                    Kind::Minus => bin.push_opcode(OpCode::Subtract, node_span),
+                    Kind::Star => bin.push_opcode(OpCode::Multiply, node_span),
+                    Kind::Slash => bin.push_opcode(OpCode::Divide, node_span),
+                    Kind::Less => bin.push_opcode(OpCode::Less, node_span),
+                    Kind::LessEqual => bin.push_opcode(OpCode::LessEqual, node_span),
+                    Kind::Greater => bin.push_opcode(OpCode::Greater, node_span),
+                    Kind::GreaterEqual => bin.push_opcode(OpCode::GreaterEqual, node_span),
+                    Kind::EqualEqual => bin.push_opcode(OpCode::Equal, node_span),
                     Kind::BangEqual => {
-                        bin.push_opcode(OpCode::Equal, expression_node.span);
-                        bin.push_opcode(OpCode::Not, expression_node.span);
+                        bin.push_opcode(OpCode::Equal, node_span);
+                        bin.push_opcode(OpCode::Not, node_span);
                     }
                     _ => {
                         return Err(CompilationError {
@@ -381,9 +356,9 @@ impl<'a, W: Write> Compiler<'a, W> {
                     }
                 }
             }
-            Expression::Assignment { lvalue, rvalue, .. } => {
-                if let Expression::Variable { name } = lvalue.expression() {
-                    self.compile_expression(bin, rvalue)?;
+            AstNode::Assignment { lvalue, rvalue, .. } => {
+                if let Some(AstNode::Variable { name }) = &lvalue.node {
+                    self.compile_node(bin, rvalue)?;
                     match self.resolve_local(name) {
                         Some((_, index)) => {
                             bin.push_opcode(OpCode::SetLocal, lvalue.span);
@@ -391,11 +366,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                         }
                         None => {
                             let name_value = Value::from(name.clone());
-                            bin.push_constant_inst(
-                                OpCode::SetGlobal,
-                                name_value,
-                                expression_node.span,
-                            );
+                            bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
                         }
                     }
                 } else {
@@ -405,23 +376,23 @@ impl<'a, W: Write> Compiler<'a, W> {
                     });
                 }
             }
-            Expression::Variable { name } => match self.resolve_local(name) {
+            AstNode::Variable { name } => match self.resolve_local(name) {
                 Some((_, index)) => {
-                    bin.push_opcode(OpCode::GetLocal, expression_node.span);
-                    bin.push_u8(index as u8, expression_node.span);
+                    bin.push_opcode(OpCode::GetLocal, node_span);
+                    bin.push_u8(index as u8, node_span);
                 }
                 None => {
                     let name_value = Value::from(name.clone());
-                    bin.push_constant_inst(OpCode::GetGlobal, name_value, expression_node.span);
+                    bin.push_constant_inst(OpCode::GetGlobal, name_value, node_span);
                 }
             },
-            Expression::Call { target, arguments } => {
-                self.compile_expression(bin, target)?;
+            AstNode::Call { target, arguments } => {
+                self.compile_node(bin, target)?;
                 for arg in arguments {
-                    self.compile_expression(bin, arg)?;
+                    self.compile_node(bin, arg)?;
                 }
-                bin.push_opcode(OpCode::Call, expression_node.span);
-                bin.push_u8(arguments.len() as u8, expression_node.span);
+                bin.push_opcode(OpCode::Call, node_span);
+                bin.push_u8(arguments.len() as u8, node_span);
             }
         };
 
@@ -451,5 +422,20 @@ impl<'a, W: Write> Compiler<'a, W> {
             }
         }
         self.scope_depth -= 1;
+    }
+}
+
+fn destructure_node(node: &SpannedAstNode) -> Result<(&AstNode, Span), CompilationError> {
+    if let SpannedAstNode {
+        node: Some(node),
+        span,
+    } = node
+    {
+        Ok((node, *span))
+    } else {
+        Err(CompilationError {
+            message: "Attempted to compile SpannedAstNode with node: None".to_string(),
+            span: node.span,
+        })
     }
 }
