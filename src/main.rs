@@ -36,6 +36,7 @@ fn run(source: String, vm: &mut VM) {
     }
 
     // Execute
+    vm.reset();
     match vm.interpret(&script, &mut std::io::stdout()) {
         Ok(_) => {}
         Err(e) => {
@@ -60,18 +61,17 @@ fn repl() {
 
         let mut source = String::new();
         loop {
-            match stdin.read_line(&mut source) {
-                Ok(count) => {
-                    if count <= 1 {
-                        run(String::from(source.trim_end()), &mut vm);
-                        break;
-                    }
-                }
-                Err(e) => {
-                    eprintln!("{}", e);
-                }
+            let mut buffer = String::new();
+            stdin.read_line(&mut buffer).unwrap();
+            if buffer.trim_end().is_empty() {
+                break;
+            } else {
+                source.push_str(&buffer);
             }
         }
+
+        println!("{}", source);
+        run(source, &mut vm);
     }
 }
 

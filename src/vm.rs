@@ -41,6 +41,12 @@ impl VM {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.ip = 0;
+        self.base = 0;
+        self.stack = Vec::new();
+    }
+
     pub fn interpret<W: Write>(
         &mut self,
         function: &ObjFunction,
