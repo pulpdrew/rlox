@@ -32,7 +32,7 @@ fn run(source: String, vm: &mut VM) {
     };
 
     if cfg!(feature = "disassemble") {
-        script.bin.dump(&mut std::io::stdout());
+        script.function.bin.dump(&mut std::io::stdout());
     }
 
     // Execute

@@ -34,6 +34,8 @@ pub enum OpCode {
     JumpIfFalse,
     Call,
     Closure,
+    GetUpvalue,
+    SetUpvalue,
 }
 
 impl From<u8> for OpCode {

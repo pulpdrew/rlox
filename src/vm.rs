@@ -1,6 +1,6 @@
 use crate::error::ReportableError;
 use crate::executable::Executable;
-use crate::object::{ObjClosure, ObjFunction};
+use crate::object::{ObjClosure, ObjFunction, ObjUpvalue};
 use crate::opcode::OpCode;
 use crate::token::Span;
 use crate::value::Value;
@@ -43,22 +43,25 @@ impl VM {
 
     pub fn interpret<W: Write>(
         &mut self,
-        function: &ObjFunction,
+        closure: &ObjClosure,
         output_stream: &mut W,
     ) -> Result<(), RuntimeError> {
-        while self.ip < function.bin.len() {
+        while self.ip < closure.function.bin.len() {
             if cfg!(feature = "disassemble") {
-                function.bin.disassemble_instruction(self.ip, output_stream);
+                closure
+                    .function
+                    .bin
+                    .disassemble_instruction(self.ip, output_stream);
             }
 
-            match OpCode::from(self.read_u8(&function.bin)?) {
+            match OpCode::from(self.read_u8(&closure.function.bin)?) {
                 OpCode::Constant => {
-                    let index = self.read_u8(&function.bin)? as u16;
-                    self.push(function.bin.get_constant(index).clone());
+                    let index = self.read_u8(&closure.function.bin)? as u16;
+                    self.push(closure.function.bin.get_constant(index).clone());
                 }
                 OpCode::LongConstant => {
-                    let index = self.read_u16(&function.bin)?;
-                    self.push(function.bin.get_constant(index).clone());
+                    let index = self.read_u16(&closure.function.bin)?;
+                    self.push(closure.function.bin.get_constant(index).clone());
                 }
                 OpCode::Negate => {
                     if self.peek(0)?.is_number() {
@@ -68,7 +71,7 @@ impl VM {
                     } else {
                         return Err(RuntimeError {
                             message: String::from("Cannot negate non-numeric types"),
-                            span: function.bin.spans[self.ip - 1],
+                            span: closure.function.bin.spans[self.ip - 1],
                         });
                     }
                 }
@@ -93,7 +96,7 @@ impl VM {
                 | op @ OpCode::LessEqual
                 | op @ OpCode::Greater
                 | op @ OpCode::GreaterEqual
-                | op @ OpCode::Equal => match self.binary_op(&op, &function.bin) {
+                | op @ OpCode::Equal => match self.binary_op(&op, &closure.function.bin) {
                     Ok(()) => {}
                     Err(e) => return Err(e),
                 },
@@ -102,56 +105,56 @@ impl VM {
                     output_stream.flush().unwrap();
                 }
                 OpCode::GetGlobal => {
-                    let index = self.read_u8(&function.bin)? as u16;
-                    self.get_global(index, function)?;
+                    let index = self.read_u8(&closure.function.bin)? as u16;
+                    self.get_global(index, &*closure.function)?;
                 }
                 OpCode::GetLongGlobal => {
-                    let index = self.read_u16(&function.bin)?;
-                    self.get_global(index, function)?;
+                    let index = self.read_u16(&closure.function.bin)?;
+                    self.get_global(index, &*closure.function)?;
                 }
                 OpCode::SetGlobal => {
-                    let index = self.read_u8(&function.bin)? as u16;
-                    self.set_global(index, function)?;
+                    let index = self.read_u8(&closure.function.bin)? as u16;
+                    self.set_global(index, &*closure.function)?;
                 }
                 OpCode::SetLongGlobal => {
-                    let index = self.read_u16(&function.bin)?;
-                    self.set_global(index, function)?;
+                    let index = self.read_u16(&closure.function.bin)?;
+                    self.set_global(index, &*closure.function)?;
                 }
                 OpCode::DeclareGlobal => {
-                    let index = self.read_u8(&function.bin)? as u16;
-                    self.declare_global(index, function)?;
+                    let index = self.read_u8(&closure.function.bin)? as u16;
+                    self.declare_global(index, &*closure.function)?;
                 }
                 OpCode::DeclareLongGlobal => {
-                    let index = self.read_u16(&function.bin)?;
-                    self.declare_global(index, function)?;
+                    let index = self.read_u16(&closure.function.bin)?;
+                    self.declare_global(index, &*closure.function)?;
                 }
                 OpCode::GetLocal => {
-                    let index = self.read_u8(&function.bin)? as usize;
+                    let index = self.read_u8(&closure.function.bin)? as usize;
                     self.push(self.stack[self.base + index].clone());
                 }
                 OpCode::SetLocal => {
-                    let index = self.read_u8(&function.bin)? as usize;
+                    let index = self.read_u8(&closure.function.bin)? as usize;
                     let stack_len = self.stack.len();
                     self.stack[stack_len - 2 - index] = self.peek(0)?.clone();
                 }
                 OpCode::Jump => {
-                    let destination = self.read_u16(&function.bin)?;
+                    let destination = self.read_u16(&closure.function.bin)?;
                     self.ip = destination as usize;
                 }
                 OpCode::JumpIfTrue => {
-                    let destination = self.read_u16(&function.bin)?;
+                    let destination = self.read_u16(&closure.function.bin)?;
                     if self.peek(0)?.is_truthy() {
                         self.ip = destination as usize;
                     }
                 }
                 OpCode::JumpIfFalse => {
-                    let destination = self.read_u16(&function.bin)?;
+                    let destination = self.read_u16(&closure.function.bin)?;
                     if !self.peek(0)?.is_truthy() {
                         self.ip = destination as usize;
                     }
                 }
                 OpCode::Call => {
-                    let arg_count = self.read_u8(&function.bin)?;
+                    let arg_count = self.read_u8(&closure.function.bin)?;
                     let callable = self.peek(arg_count as usize)?.clone();
 
                     match callable {
@@ -161,28 +164,48 @@ impl VM {
                         _ => {
                             return Err(RuntimeError {
                                 message: format!("Cannot call {}", callable),
-                                span: function.bin.spans[self.ip - 1],
+                                span: closure.function.bin.spans[self.ip - 1],
                             });
                         }
                     }
                 }
                 OpCode::Closure => {
-                    let index = self.read_u8(&function.bin)? as u16;
-                    let arg_value = function.bin.get_constant(index).clone();
+                    let index = self.read_u8(&closure.function.bin)? as u16;
+                    let arg_value = closure.function.bin.get_constant(index).clone();
 
                     let function = if let Value::Function(f) = arg_value {
                         f.clone()
                     } else {
                         return Err(RuntimeError {
                             message: format!("Closure instruction expected function constant argument, but got {}", arg_value),
-                            span: function.bin.spans[self.ip - 1]
+                            span: closure.function.bin.spans[self.ip - 1]
                         });
                     };
 
-                    let closure = ObjClosure { function };
+                    let upvalues = function
+                        .upvalues
+                        .iter()
+                        .map(|(is_local, index)| {
+                            if *is_local {
+                                ObjUpvalue::from(self.stack[self.base + index].clone())
+                            } else {
+                                ObjUpvalue::from(closure.upvalues[*index].value.clone())
+                            }
+                        })
+                        .collect();
+
+                    let closure = ObjClosure {
+                        function: function,
+                        upvalues,
+                    };
                     let closure_value = Value::from(closure);
                     self.push(closure_value);
                 }
+                OpCode::GetUpvalue => {
+                    let index = self.read_u8(&closure.function.bin)?;
+                    self.push(closure.upvalues[index as usize].value.clone());
+                }
+                OpCode::SetUpvalue => {}
             }
             if cfg!(feature = "disassemble") {
                 self.print_stack(output_stream);
@@ -212,7 +235,7 @@ impl VM {
         self.ip = 0;
 
         // Run the function
-        self.interpret(&*closure.function, output_stream)?;
+        self.interpret(closure, output_stream)?;
 
         // Remove everything from the stack except the return value
         for _ in (self.base + 1)..self.stack.len() {

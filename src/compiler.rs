@@ -1,12 +1,13 @@
 use crate::ast::{AstNode, SpannedAstNode};
 use crate::error::ReportableError;
 use crate::executable::Executable;
-use crate::object::{ObjFunction, ObjString};
+use crate::object::{ObjClosure, ObjFunction, ObjString};
 use crate::opcode::OpCode;
 use crate::token::{Kind, Span};
 use crate::value::Value;
 use std::collections::VecDeque;
 use std::io::Write;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct CompilationError {
@@ -32,7 +33,7 @@ pub struct Compiler<'a, W: Write> {
 pub fn compile<W: Write>(
     program: Vec<SpannedAstNode>,
     output_stream: &mut W,
-) -> Result<ObjFunction, CompilationError> {
+) -> Result<ObjClosure, CompilationError> {
     let mut compiler = Compiler::new(output_stream);
     let mut bin = Executable::new(String::from("script"));
 
@@ -40,10 +41,14 @@ pub fn compile<W: Write>(
         compiler.compile_node(&mut bin, &node)?;
     }
 
-    Ok(ObjFunction {
-        arity: 0,
-        bin,
-        name: Box::new(ObjString::from("script")),
+    Ok(ObjClosure {
+        function: Rc::new(ObjFunction {
+            arity: 0,
+            bin,
+            name: Box::new(ObjString::from("script")),
+            upvalues: vec![],
+        }),
+        upvalues: vec![],
     })
 }
 
@@ -85,12 +90,12 @@ impl<'a, W: Write> Compiler<'a, W> {
                     bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
                 }
 
-                if self.frames.back().unwrap().is_global() {
+                if self.current_frame().is_global() {
                     bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
                     bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
                     bin.push_opcode(OpCode::Pop, node_span);
                 } else {
-                    if let Some((_, distance)) = self.frames.back().unwrap().resolve(name) {
+                    if let Some((_, distance)) = self.current_frame().resolve_local(name) {
                         if distance == 0 {
                             return Err(CompilationError {
                                 message: format!("Redeclaration of local variable {}", name),
@@ -99,19 +104,19 @@ impl<'a, W: Write> Compiler<'a, W> {
                         }
                     }
 
-                    self.frames.back_mut().unwrap().add_local(name);
+                    self.current_frame_mut().add_local(name);
                 }
             }
             AstNode::Block {
                 declarations,
                 rbrace,
             } => {
-                self.frames.back_mut().unwrap().begin_scope();
+                self.current_frame_mut().begin_scope();
                 for statement in declarations.iter() {
                     self.compile_node(bin, statement)?
                 }
 
-                self.frames.back_mut().unwrap().end_scope(bin, rbrace.span);
+                self.current_frame_mut().end_scope(bin, rbrace.span);
             }
             AstNode::If {
                 condition,
@@ -177,7 +182,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                 update,
                 block,
             } => {
-                self.frames.back_mut().unwrap().begin_scope();
+                self.current_frame_mut().begin_scope();
                 if let Some(initializer) = initializer {
                     self.compile_node(bin, initializer)?;
                 }
@@ -215,7 +220,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                     bin.replace_u16(jump_to_end_index, bin.len() as u16);
                 }
                 bin.push_opcode(OpCode::Pop, node_span);
-                self.frames.back_mut().unwrap().end_scope(bin, block.span);
+                self.current_frame_mut().end_scope(bin, block.span);
             }
             AstNode::FunDeclaration {
                 name,
@@ -227,7 +232,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                 // Add the parameters to the list of Locals
                 for param in parameters.iter() {
                     if let Kind::IdentifierLiteral(param_name) = &param.kind {
-                        self.frames.back_mut().unwrap().add_local(param_name);
+                        self.current_frame_mut().add_local(param_name);
                     } else {
                         return Err(CompilationError {
                             message: "Expected parameter name to be IdentifierLiteral".to_string(),
@@ -250,9 +255,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                 }
 
                 // End the scope and restore the outer function's locals
-                self.frames
-                    .back_mut()
-                    .unwrap()
+                self.current_frame_mut()
                     .end_scope(&mut function_binary, body.span);
                 self.frames.pop_back();
 
@@ -261,17 +264,18 @@ impl<'a, W: Write> Compiler<'a, W> {
                     name: Box::new(ObjString::from(name.clone())),
                     arity: parameters.len() as u8,
                     bin: function_binary,
+                    upvalues: self.current_frame_mut().upvalues.drain(0..).collect(),
                 });
                 bin.push_constant_inst(OpCode::Closure, value, node_span);
 
                 // Assign the function to the variable of the matching name
                 let name_value = Value::from(name.clone());
-                if self.frames.back().unwrap().is_global() {
+                if self.current_frame().is_global() {
                     bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
                     bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
                     bin.push_opcode(OpCode::Pop, node_span);
                 } else {
-                    self.frames.back_mut().unwrap().add_local(name);
+                    self.current_frame_mut().add_local(name);
                 }
             }
             AstNode::Return { value } => {
@@ -337,15 +341,15 @@ impl<'a, W: Write> Compiler<'a, W> {
             AstNode::Assignment { lvalue, rvalue, .. } => {
                 if let Some(AstNode::Variable { name }) = &lvalue.node {
                     self.compile_node(bin, rvalue)?;
-                    match self.frames.back_mut().unwrap().resolve(name) {
-                        Some((index, _)) => {
-                            bin.push_opcode(OpCode::SetLocal, lvalue.span);
-                            bin.push_u8(index as u8, lvalue.span);
-                        }
-                        None => {
-                            let name_value = Value::from(name.clone());
-                            bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
-                        }
+                    if let Some((index, _)) = self.current_frame().resolve_local(name) {
+                        bin.push_opcode(OpCode::SetLocal, node_span);
+                        bin.push_u8(index as u8, node_span);
+                    } else if let Some(index) = self.resolve_upvalue(0, name) {
+                        bin.push_opcode(OpCode::SetUpvalue, node_span);
+                        bin.push_u8(index as u8, node_span);
+                    } else {
+                        let name_value = Value::from(name.clone());
+                        bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
                     }
                 } else {
                     return Err(CompilationError {
@@ -354,16 +358,18 @@ impl<'a, W: Write> Compiler<'a, W> {
                     });
                 }
             }
-            AstNode::Variable { name } => match self.frames.back_mut().unwrap().resolve(name) {
-                Some((index, _)) => {
+            AstNode::Variable { name } => {
+                if let Some((index, _)) = self.current_frame().resolve_local(name) {
                     bin.push_opcode(OpCode::GetLocal, node_span);
                     bin.push_u8(index as u8, node_span);
-                }
-                None => {
+                } else if let Some(index) = self.resolve_upvalue(0, name) {
+                    bin.push_opcode(OpCode::GetUpvalue, node_span);
+                    bin.push_u8(index as u8, node_span);
+                } else {
                     let name_value = Value::from(name.clone());
                     bin.push_constant_inst(OpCode::GetGlobal, name_value, node_span);
                 }
-            },
+            }
             AstNode::Call { target, arguments } => {
                 self.compile_node(bin, target)?;
                 for arg in arguments {
@@ -375,6 +381,45 @@ impl<'a, W: Write> Compiler<'a, W> {
         };
 
         Ok(())
+    }
+
+    fn current_frame(&self) -> &Frame {
+        self.frames.back().unwrap()
+    }
+
+    fn current_frame_mut(&mut self) -> &mut Frame {
+        self.frames.back_mut().unwrap()
+    }
+
+    fn resolve_upvalue(&mut self, frame_depth: usize, name: &str) -> Option<usize> {
+        if frame_depth >= self.frames.len() {
+            return None;
+        }
+
+        if let Some((index, _)) = self
+            .frames
+            .get_mut(self.frames.len() - frame_depth - 1)
+            .unwrap()
+            .resolve_local(name)
+        {
+            return Some(
+                self.frames
+                    .get_mut(self.frames.len() - frame_depth - 1)
+                    .unwrap()
+                    .add_upvalue(index, true),
+            );
+        }
+
+        if let Some(index) = self.resolve_upvalue(frame_depth + 1, name) {
+            Some(
+                self.frames
+                    .get_mut(self.frames.len() - frame_depth - 1)
+                    .unwrap()
+                    .add_upvalue(index, false),
+            )
+        } else {
+            None
+        }
     }
 }
 
@@ -430,6 +475,7 @@ impl LocalScope {
 #[derive(Debug)]
 struct Frame {
     scopes: VecDeque<LocalScope>,
+    upvalues: VecDeque<(bool, usize)>,
     is_global: bool,
 }
 
@@ -437,15 +483,30 @@ impl Frame {
     fn new(is_global: bool) -> Self {
         let mut scopes = VecDeque::new();
         scopes.push_back(LocalScope::new(0));
-        Frame { scopes, is_global }
+        Frame {
+            scopes,
+            is_global,
+            upvalues: VecDeque::new(),
+        }
     }
 
     fn add_local(&mut self, name: &str) {
         self.scopes.back_mut().unwrap().push(name.to_string());
     }
 
+    fn add_upvalue(&mut self, index: usize, is_local: bool) -> usize {
+        for (i, upvalue) in self.upvalues.iter().enumerate() {
+            if upvalue.0 == is_local && upvalue.1 == index {
+                return i;
+            }
+        }
+
+        self.upvalues.push_back((is_local, index));
+        self.upvalues.len() - 1
+    }
+
     /// Resolves a local to (offset from frame pointer, distance to scope)
-    fn resolve(&self, name: &str) -> Option<(usize, usize)> {
+    fn resolve_local(&self, name: &str) -> Option<(usize, usize)> {
         for (distance, scope) in self.scopes.iter().rev().enumerate() {
             if let Some(offset) = scope.resolve(name) {
                 return Some((offset + scope.offset, distance));

@@ -1,4 +1,5 @@
 use crate::executable::Executable;
+use crate::value::Value;
 use std::fmt;
 use std::rc::Rc;
 
@@ -6,6 +7,7 @@ pub struct ObjFunction {
     pub arity: u8,
     pub bin: Executable,
     pub name: Box<ObjString>,
+    pub upvalues: Vec<(bool, usize)>,
 }
 
 impl fmt::Display for ObjFunction {
@@ -36,6 +38,7 @@ impl Drop for ObjFunction {
 #[derive(PartialEq)]
 pub struct ObjClosure {
     pub function: Rc<ObjFunction>,
+    pub upvalues: Vec<ObjUpvalue>,
 }
 
 impl fmt::Display for ObjClosure {
@@ -54,6 +57,36 @@ impl fmt::Debug for ObjClosure {
 impl Drop for ObjClosure {
     fn drop(&mut self) {
         println!("**Dropped [{:?}]**", self)
+    }
+}
+
+#[derive(PartialEq)]
+pub struct ObjUpvalue {
+    pub value: Value,
+}
+
+impl fmt::Display for ObjUpvalue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+impl fmt::Debug for ObjUpvalue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(upvalue {:?})", self.value)
+    }
+}
+
+#[cfg(feature = "trace_drops")]
+impl Drop for ObjUpvalue {
+    fn drop(&mut self) {
+        println!("**Dropped [{:?}]**", self)
+    }
+}
+
+impl From<Value> for ObjUpvalue {
+    fn from(value: Value) -> Self {
+        ObjUpvalue { value }
     }
 }
 

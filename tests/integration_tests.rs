@@ -519,33 +519,7 @@ fn function_recursive() {
 }
 
 #[test]
-fn closure_1() {
-    let source = "
-    fun adder(a) {
-        fun f(b) {
-            return a + b;
-        }
-        return f;
-    }
-    var add2 = adder(2);
-    print add2(1);
-    "
-    .trim()
-    .to_string();
-
-    let expected_stderr = "".trim();
-    let expected_stdout = "
-3
-    "
-    .trim();
-
-    let (stdout, stderr) = common::run(source);
-    assert_eq!(expected_stderr, stderr.contents.trim());
-    assert_eq!(expected_stdout, stdout.contents.trim());
-}
-
-#[test]
-fn closure_2() {
+fn closure_immediate() {
     let source = "
     fun foo(f) {
         fun bar(b) {
@@ -561,6 +535,62 @@ fn closure_2() {
     let expected_stderr = "".trim();
     let expected_stdout = "
 8
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
+
+#[test]
+fn closure_deferred() {
+    let source = "
+    fun adder(a) {
+        fun f(b) {
+            return a + b;
+        }
+        return f;
+    }
+    var add2 = adder(2);
+    print add2(1);
+    print adder(2)(3);
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+3
+5
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
+
+#[test]
+fn closure_nested() {
+    let source = "
+    fun foo(f) {
+        fun bar(b) {
+            fun baz(z) {
+                return f + b + z;
+            }
+            return baz;
+        }
+        return bar(3);
+    }
+    print foo(5)(7);
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+15
     "
     .trim();
 

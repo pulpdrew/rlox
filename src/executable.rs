@@ -157,6 +157,8 @@ impl Executable {
             OpCode::JumpIfTrue => self.single_long_arg_instruction("JumpIfTrue", offset, out),
             OpCode::JumpIfFalse => self.single_long_arg_instruction("JumpIfFalse", offset, out),
             OpCode::Call => self.single_arg_instruction("Call", offset, out),
+            OpCode::GetUpvalue => self.single_arg_instruction("GetUpvalue", offset, out),
+            OpCode::SetUpvalue => self.single_arg_instruction("SetUpvalue", offset, out),
             OpCode::Closure => {
                 let index = self.read_u8(offset + 1);
                 let value = &self.constants[index as usize];
