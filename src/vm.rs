@@ -215,7 +215,69 @@ impl VM {
                     let index = self.read_u8(&closure.function.bin)?;
                     self.push(closure.upvalues[index as usize].value.clone());
                 }
-                OpCode::SetUpvalue => {}
+                OpCode::ReadField => {
+                    let name_index = self.read_u8(&closure.function.bin)?;
+                    let name_constant = closure.function.bin.get_constant(name_index as u16);
+
+                    let name = if let Value::String(s) = name_constant {
+                        &s.string
+                    } else {
+                        return Err(RuntimeError {
+                            message: format!(
+                                "Expected field name ObjString but found {:?}",
+                                name_constant
+                            ),
+                            span: closure.function.bin.spans[self.ip - 2],
+                        });
+                    };
+
+                    let target_value = self.peek(0)?.clone();
+                    if let Value::Instance(instance) = target_value {
+                        if let Some(v) = instance.borrow().fields.get(name) {
+                            self.push(v.clone());
+                        } else {
+                            return Err(RuntimeError {
+                                message: format!("{:?} has no field {}", instance, name),
+                                span: closure.function.bin.spans[self.ip - 1],
+                            });
+                        }
+                    } else {
+                        return Err(RuntimeError {
+                            message: format!("{:?} is not an instance", target_value),
+                            span: closure.function.bin.spans[self.ip - 1],
+                        });
+                    }
+                }
+                OpCode::SetField => {
+                    let name_index = self.read_u8(&closure.function.bin)?;
+                    let name_constant = closure.function.bin.get_constant(name_index as u16);
+
+                    let field_name = if let Value::String(s) = name_constant {
+                        &s.string
+                    } else {
+                        return Err(RuntimeError {
+                            message: format!(
+                                "Expected field name ObjString but found {:?}",
+                                name_constant
+                            ),
+                            span: closure.function.bin.spans[self.ip - 2],
+                        });
+                    };
+
+                    let target_value = self.peek(1)?.clone();
+                    if let Value::Instance(instance) = target_value {
+                        let rvalue = self.peek(0)?.clone();
+                        instance
+                            .borrow_mut()
+                            .fields
+                            .insert(field_name.clone(), rvalue);
+                    } else {
+                        return Err(RuntimeError {
+                            message: format!("{:?} is not an instance", target_value),
+                            span: closure.function.bin.spans[self.ip - 1],
+                        });
+                    }
+                }
             }
             if cfg!(feature = "disassemble") {
                 self.print_stack(output_stream);
@@ -262,8 +324,8 @@ impl VM {
     fn instantiate<W: Write>(
         &mut self,
         class: &Rc<ObjClass>,
-        arg_count: u8,
-        output_stream: &mut W,
+        _arg_count: u8,
+        _output_stream: &mut W,
     ) -> Result<(), RuntimeError> {
         let instance = ObjInstance::from(class);
         self.push(Value::from(instance));

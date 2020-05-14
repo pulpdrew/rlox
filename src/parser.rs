@@ -478,25 +478,41 @@ impl Parser {
     fn call(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let mut node = self.primary()?;
 
-        while self.current.kind == Kind::LeftParen {
-            self.advance();
+        loop {
+            match self.current.kind {
+                Kind::LeftParen => {
+                    self.advance();
 
-            let arguments = match self.current.kind {
-                Kind::RightParen => vec![],
-                _ => self.argument_list()?,
-            };
+                    let arguments = match self.current.kind {
+                        Kind::RightParen => vec![],
+                        _ => self.argument_list()?,
+                    };
 
-            let rparen = self.eat(Kind::RightParen, "Expected ')' after argument list.")?;
+                    let rparen = self.eat(Kind::RightParen, "Expected ')' after argument list.")?;
 
-            let new_span = Span::merge(vec![&node.span, &rparen.span]);
+                    let new_span = Span::merge(vec![&node.span, &rparen.span]);
 
-            node = SpannedAstNode::new(
-                AstNode::Invokation {
-                    target: Box::new(node),
-                    arguments,
-                },
-                new_span,
-            )
+                    node = SpannedAstNode::new(
+                        AstNode::Invokation {
+                            target: Box::new(node),
+                            arguments,
+                        },
+                        new_span,
+                    )
+                }
+                Kind::Dot => {
+                    self.advance();
+                    let (field_name, field_span) = self.id_token()?;
+                    node = SpannedAstNode::new(
+                        AstNode::FieldAccess {
+                            target: Box::new(node),
+                            name: field_name,
+                        },
+                        field_span,
+                    )
+                }
+                _ => break,
+            }
         }
 
         Ok(node)

@@ -165,6 +165,8 @@ impl Executable {
                 writeln!(out, "{:<16} {:>4}[{:?}]", "Closure", index, value).unwrap();
                 offset + 2
             }
+            OpCode::ReadField => self.constant_instruction("ReadField", offset, out),
+            OpCode::SetField => self.constant_instruction("SetField", offset, out),
         }
     }
 

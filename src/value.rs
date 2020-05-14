@@ -15,7 +15,7 @@ pub enum Value {
     Closure(Rc<ObjClosure>),
     String(Rc<ObjString>),
     Class(Rc<ObjClass>),
-    Instance(Rc<ObjInstance>),
+    Instance(Rc<RefCell<ObjInstance>>),
 }
 
 impl fmt::Debug for Value {
@@ -43,7 +43,7 @@ impl fmt::Display for Value {
             Value::Closure(c) => write!(f, "{}", c),
             Value::String(s) => write!(f, "{}", s),
             Value::Class(c) => write!(f, "{}", c),
-            Value::Instance(i) => write!(f, "{}", i),
+            Value::Instance(i) => write!(f, "{}", i.borrow()),
         }
     }
 }
@@ -282,6 +282,6 @@ impl From<ObjClass> for Value {
 
 impl From<ObjInstance> for Value {
     fn from(instance: ObjInstance) -> Self {
-        Value::Instance(Rc::new(instance))
+        Value::Instance(Rc::new(RefCell::new(instance)))
     }
 }

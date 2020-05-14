@@ -362,8 +362,8 @@ impl<'a, W: Write> Compiler<'a, W> {
                     }
                 }
             }
-            AstNode::Assignment { lvalue, rvalue, .. } => {
-                if let Some(AstNode::Variable { name }) = &lvalue.node {
+            AstNode::Assignment { lvalue, rvalue, .. } => match &lvalue.node {
+                Some(AstNode::Variable { name }) => {
                     self.compile_node(bin, rvalue)?;
                     if let Some((index, _)) = self.current_frame().resolve_local(name) {
                         bin.push_opcode(OpCode::SetLocal, node_span);
@@ -375,13 +375,19 @@ impl<'a, W: Write> Compiler<'a, W> {
                         let name_value = Value::from(name.clone());
                         bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
                     }
-                } else {
+                }
+                Some(AstNode::FieldAccess { target, name }) => {
+                    self.compile_node(bin, target)?;
+                    self.compile_node(bin, rvalue)?;
+                    bin.push_constant_inst(OpCode::SetField, Value::from(name.clone()), node_span);
+                }
+                _ => {
                     return Err(CompilationError {
                         message: format!("Assignment to non-lvalue {:?}", lvalue),
                         span: lvalue.span,
                     });
                 }
-            }
+            },
             AstNode::Variable { name } => {
                 if let Some((index, _)) = self.current_frame().resolve_local(name) {
                     bin.push_opcode(OpCode::GetLocal, node_span);
@@ -401,6 +407,10 @@ impl<'a, W: Write> Compiler<'a, W> {
                 }
                 bin.push_opcode(OpCode::Invoke, node_span);
                 bin.push_u8(arguments.len() as u8, node_span);
+            }
+            AstNode::FieldAccess { target, name } => {
+                self.compile_node(bin, target)?;
+                bin.push_constant_inst(OpCode::ReadField, Value::from(name.clone()), node_span);
             }
         };
 

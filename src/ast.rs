@@ -62,6 +62,10 @@ pub enum AstNode {
         target: Box<SpannedAstNode>,
         arguments: Vec<SpannedAstNode>,
     },
+    FieldAccess {
+        target: Box<SpannedAstNode>,
+        name: String,
+    },
     ExpressionStmt {
         expression: Box<SpannedAstNode>,
     },

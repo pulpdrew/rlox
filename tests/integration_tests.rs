@@ -663,3 +663,40 @@ foo instance
     assert_eq!(expected_stderr, stderr.contents.trim());
     assert_eq!(expected_stdout, stdout.contents.trim());
 }
+
+#[test]
+fn instance_get_set() {
+    let source = "
+    class foo {}
+    var f1 = foo();
+    var f2 = foo();
+
+    f1.field_one = 123;
+    f1.field_two = 456;
+    f2.field_one = 789;
+
+    print f1.field_one;
+    print f1.field_two;
+    print f2.field_one;
+
+    f1.field_one = 101;
+    print f1.field_one;
+    print f1.field_two;
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+123
+456
+789
+101
+456
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
