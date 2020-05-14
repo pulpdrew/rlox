@@ -727,3 +727,38 @@ fn instance_get_set() {
     assert_eq!(expected_stderr, stderr.contents.trim());
     assert_eq!(expected_stdout, stdout.contents.trim());
 }
+
+#[test]
+fn instance_upvalue() {
+    let source = "
+    class A {}
+
+    fun foo(a) {
+        a.a = a;
+        fun bar(b) {
+            a.b = b;
+        }
+        return bar;
+    }
+
+    var instance = A();
+    var setter = foo(instance);
+    print instance.a;
+
+    setter(5);
+    print instance.b;
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+A instance
+5
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}

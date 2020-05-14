@@ -170,6 +170,7 @@ impl VM {
                             self.call(&*closure, arg_count, output_stream)?;
                         }
                         Value::Class(class) => {
+                            self.pop()?;
                             self.instantiate(&class, arg_count, output_stream)?;
                         }
                         _ => {
@@ -250,7 +251,7 @@ impl VM {
                         });
                     };
 
-                    let target_value = self.peek(0)?.clone();
+                    let target_value = self.pop()?;
                     if let Value::Instance(instance) = target_value {
                         if let Some(v) = instance.fields.borrow().get(name) {
                             self.push(v.clone());
@@ -283,13 +284,14 @@ impl VM {
                         });
                     };
 
-                    let target_value = self.peek(1)?.clone();
+                    let rvalue = self.pop()?;
+                    let target_value = self.pop()?;
                     if let Value::Instance(instance) = target_value {
-                        let rvalue = self.peek(0)?.clone();
                         instance
                             .fields
                             .borrow_mut()
-                            .insert(field_name.clone(), rvalue);
+                            .insert(field_name.clone(), rvalue.clone());
+                        self.push(rvalue);
                     } else {
                         return Err(RuntimeError {
                             message: format!("{:?} is not an instance", target_value),

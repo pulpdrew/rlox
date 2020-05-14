@@ -156,7 +156,7 @@ impl Executable {
             OpCode::Jump => self.single_long_arg_instruction("Jump", offset, out),
             OpCode::JumpIfTrue => self.single_long_arg_instruction("JumpIfTrue", offset, out),
             OpCode::JumpIfFalse => self.single_long_arg_instruction("JumpIfFalse", offset, out),
-            OpCode::Invoke => self.single_arg_instruction("Call", offset, out),
+            OpCode::Invoke => self.single_arg_instruction("Invoke", offset, out),
             OpCode::GetUpvalue => self.single_arg_instruction("GetUpvalue", offset, out),
             OpCode::SetUpvalue => self.single_arg_instruction("SetUpvalue", offset, out),
             OpCode::Closure => {
