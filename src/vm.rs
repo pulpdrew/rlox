@@ -5,6 +5,7 @@ use crate::opcode::OpCode;
 use crate::token::Span;
 use crate::value::Value;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Write;
 use std::rc::Rc;
@@ -192,17 +193,27 @@ impl VM {
                         });
                     };
 
-                    let upvalues = function
-                        .upvalues
-                        .iter()
-                        .map(|(is_local, index)| {
-                            if *is_local {
-                                ObjUpvalue::from(self.stack[self.base + index].clone())
-                            } else {
-                                ObjUpvalue::from(closure.upvalues[*index].value.clone())
-                            }
-                        })
-                        .collect();
+                    let upvalues = RefCell::new(
+                        function
+                            .upvalues
+                            .iter()
+                            .map(|(is_local, index)| {
+                                if *is_local {
+                                    ObjUpvalue::from(self.stack[self.base + index].clone())
+                                } else {
+                                    ObjUpvalue::from(
+                                        closure
+                                            .upvalues
+                                            .borrow()
+                                            .get(*index)
+                                            .unwrap()
+                                            .value
+                                            .clone(),
+                                    )
+                                }
+                            })
+                            .collect(),
+                    );
 
                     let closure = ObjClosure {
                         function: function,
@@ -213,7 +224,15 @@ impl VM {
                 }
                 OpCode::GetUpvalue => {
                     let index = self.read_u8(&closure.function.bin)?;
-                    self.push(closure.upvalues[index as usize].value.clone());
+                    self.push(
+                        closure
+                            .upvalues
+                            .borrow()
+                            .get(index as usize)
+                            .unwrap()
+                            .value
+                            .clone(),
+                    );
                 }
                 OpCode::ReadField => {
                     let name_index = self.read_u8(&closure.function.bin)?;
@@ -233,7 +252,7 @@ impl VM {
 
                     let target_value = self.peek(0)?.clone();
                     if let Value::Instance(instance) = target_value {
-                        if let Some(v) = instance.borrow().fields.get(name) {
+                        if let Some(v) = instance.fields.borrow().get(name) {
                             self.push(v.clone());
                         } else {
                             return Err(RuntimeError {
@@ -268,8 +287,8 @@ impl VM {
                     if let Value::Instance(instance) = target_value {
                         let rvalue = self.peek(0)?.clone();
                         instance
-                            .borrow_mut()
                             .fields
+                            .borrow_mut()
                             .insert(field_name.clone(), rvalue);
                     } else {
                         return Err(RuntimeError {
@@ -277,6 +296,13 @@ impl VM {
                             span: closure.function.bin.spans[self.ip - 1],
                         });
                     }
+                }
+                OpCode::SetUpvalue => {
+                    let index = self.read_u8(&closure.function.bin)?;
+                    closure
+                        .upvalues
+                        .borrow_mut()
+                        .insert(index as usize, ObjUpvalue::from(self.peek(0)?.clone()))
                 }
             }
             if cfg!(feature = "disassemble") {

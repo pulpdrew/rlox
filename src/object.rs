@@ -1,5 +1,6 @@
 use crate::executable::Executable;
 use crate::value::Value;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
@@ -39,7 +40,7 @@ impl Drop for ObjFunction {
 #[derive(PartialEq)]
 pub struct ObjClosure {
     pub function: Rc<ObjFunction>,
-    pub upvalues: Vec<ObjUpvalue>,
+    pub upvalues: RefCell<Vec<ObjUpvalue>>,
 }
 
 impl fmt::Display for ObjClosure {
@@ -156,7 +157,7 @@ impl Drop for ObjClass {
 #[derive(PartialEq)]
 pub struct ObjInstance {
     pub class: Rc<ObjClass>,
-    pub fields: HashMap<String, Value>,
+    pub fields: RefCell<HashMap<String, Value>>,
 }
 
 impl fmt::Display for ObjInstance {
@@ -182,7 +183,7 @@ impl From<&Rc<ObjClass>> for ObjInstance {
     fn from(class: &Rc<ObjClass>) -> Self {
         ObjInstance {
             class: class.clone(),
-            fields: HashMap::new(),
+            fields: RefCell::new(HashMap::new()),
         }
     }
 }

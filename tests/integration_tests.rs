@@ -665,6 +665,33 @@ foo instance
 }
 
 #[test]
+fn closure_set_captured() {
+    let source = "
+    fun adder(a) {
+        fun f(b) {
+            a = a + 1;
+            return a + b;
+        }
+        return f;
+    }
+    var add3 = adder(2);
+    print add3(1);
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+4
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
+
+#[test]
 fn instance_get_set() {
     let source = "
     class foo {}

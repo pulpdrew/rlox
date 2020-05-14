@@ -5,6 +5,7 @@ use crate::object::{ObjClass, ObjClosure, ObjFunction, ObjString};
 use crate::opcode::OpCode;
 use crate::token::{Kind, Span};
 use crate::value::Value;
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::rc::Rc;
@@ -48,7 +49,7 @@ pub fn compile<W: Write>(
             name: Box::new(ObjString::from("script")),
             upvalues: vec![],
         }),
-        upvalues: vec![],
+        upvalues: RefCell::new(vec![]),
     })
 }
 
