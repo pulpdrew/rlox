@@ -460,9 +460,9 @@ impl Parser {
     }
 
     fn call(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        let primary = self.primary()?;
+        let mut node = self.primary()?;
 
-        if self.current.kind == Kind::LeftParen {
+        while self.current.kind == Kind::LeftParen {
             self.advance();
 
             let arguments = match self.current.kind {
@@ -472,18 +472,18 @@ impl Parser {
 
             let rparen = self.eat(Kind::RightParen, "Expected ')' after argument list.")?;
 
-            let new_span = Span::merge(vec![&primary.span, &rparen.span]);
+            let new_span = Span::merge(vec![&node.span, &rparen.span]);
 
-            Ok(SpannedAstNode::new(
+            node = SpannedAstNode::new(
                 AstNode::Call {
-                    target: Box::new(primary),
+                    target: Box::new(node),
                     arguments,
                 },
                 new_span,
-            ))
-        } else {
-            Ok(primary)
+            )
         }
+
+        Ok(node)
     }
 
     fn primary(&mut self) -> Result<SpannedAstNode, ParsingError> {
