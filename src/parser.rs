@@ -63,6 +63,7 @@ impl Parser {
     fn declaration(&mut self) -> Result<SpannedAstNode, ParsingError> {
         match self.current.kind {
             Kind::Var => self.var_declaration(),
+            Kind::Class => self.class_declaration(),
             Kind::Fun => {
                 self.advance();
                 self.function()
@@ -98,7 +99,22 @@ impl Parser {
         let semi = self.eat(Kind::Semicolon, "Expected ';' after declaration.")?;
         let span = Span::merge(vec![&keyword.span, &semi.span]);
         Ok(SpannedAstNode::new(
-            AstNode::Declaration { name, initializer },
+            AstNode::VarDeclaration { name, initializer },
+            span,
+        ))
+    }
+
+    fn class_declaration(&mut self) -> Result<SpannedAstNode, ParsingError> {
+        let keyword = self.eat(Kind::Class, "Expected 'class' keyword")?;
+        let (name, _) = self.id_token()?;
+        let body = self.block_statement()?;
+
+        let span = Span::merge(vec![&keyword.span, &body.span]);
+        Ok(SpannedAstNode::new(
+            AstNode::ClassDeclaration {
+                name,
+                body: Box::new(body),
+            },
             span,
         ))
     }

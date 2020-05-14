@@ -1,4 +1,4 @@
-use crate::object::{ObjClosure, ObjFunction, ObjString};
+use crate::object::{ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjString};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops;
@@ -14,6 +14,8 @@ pub enum Value {
     Function(Rc<ObjFunction>),
     Closure(Rc<ObjClosure>),
     String(Rc<ObjString>),
+    Class(Rc<ObjClass>),
+    Instance(Rc<ObjInstance>),
 }
 
 impl fmt::Debug for Value {
@@ -25,6 +27,8 @@ impl fmt::Debug for Value {
             Value::Function(func) => write!(f, "{:?}", func),
             Value::Closure(c) => write!(f, "{:?}", c),
             Value::String(s) => write!(f, "{:?}", s),
+            Value::Class(c) => write!(f, "{:?}", c),
+            Value::Instance(i) => write!(f, "{:?}", i),
         }
     }
 }
@@ -38,6 +42,8 @@ impl fmt::Display for Value {
             Value::Function(func) => write!(f, "{}", func),
             Value::Closure(c) => write!(f, "{}", c),
             Value::String(s) => write!(f, "{}", s),
+            Value::Class(c) => write!(f, "{}", c),
+            Value::Instance(i) => write!(f, "{}", i),
         }
     }
 }
@@ -199,6 +205,14 @@ impl PartialEq for Value {
                 Value::String(r) => l.string == r.string,
                 _ => false,
             },
+            Value::Class(l) => match other {
+                Value::Class(r) => l == r,
+                _ => false,
+            },
+            Value::Instance(l) => match other {
+                Value::Instance(r) => l == r,
+                _ => false,
+            },
         }
     }
 }
@@ -257,5 +271,17 @@ impl From<ObjFunction> for Value {
 impl From<ObjClosure> for Value {
     fn from(closure: ObjClosure) -> Self {
         Value::Closure(Rc::new(closure))
+    }
+}
+
+impl From<ObjClass> for Value {
+    fn from(class: ObjClass) -> Self {
+        Value::Class(Rc::new(class))
+    }
+}
+
+impl From<ObjInstance> for Value {
+    fn from(instance: ObjInstance) -> Self {
+        Value::Instance(Rc::new(instance))
     }
 }

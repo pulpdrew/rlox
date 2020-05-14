@@ -1,5 +1,6 @@
 use crate::executable::Executable;
 use crate::value::Value;
+use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
@@ -125,5 +126,54 @@ impl From<&str> for ObjString {
         ObjString {
             string: string.to_string(),
         }
+    }
+}
+
+#[derive(PartialEq)]
+pub struct ObjClass {
+    pub name: Box<ObjString>,
+}
+
+impl fmt::Display for ObjClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl fmt::Debug for ObjClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<Class {}>", self.name)
+    }
+}
+
+#[cfg(feature = "trace_drops")]
+impl Drop for ObjClass {
+    fn drop(&mut self) {
+        println!("**Dropped [{:?}]**", self)
+    }
+}
+
+#[derive(PartialEq)]
+pub struct ObjInstance {
+    pub class: Rc<ObjClass>,
+    pub fields: HashMap<String, Value>,
+}
+
+impl fmt::Display for ObjInstance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} instance", self.class.name)
+    }
+}
+
+impl fmt::Debug for ObjInstance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<Instance {}>", self.class.name)
+    }
+}
+
+#[cfg(feature = "trace_drops")]
+impl Drop for ObjInstance {
+    fn drop(&mut self) {
+        println!("**Dropped [{:?}]**", self)
     }
 }

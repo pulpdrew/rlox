@@ -598,3 +598,45 @@ fn closure_nested() {
     assert_eq!(expected_stderr, stderr.contents.trim());
     assert_eq!(expected_stdout, stdout.contents.trim());
 }
+
+#[test]
+fn class_decl() {
+    let source = "
+    class foo {}
+    print foo;
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+foo
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
+
+#[test]
+fn class_decl_nested() {
+    let source = "
+    {
+        class foo {}
+        print foo;
+    }
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+foo
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}

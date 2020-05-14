@@ -68,9 +68,13 @@ pub enum AstNode {
     Print {
         expression: Box<SpannedAstNode>,
     },
-    Declaration {
+    VarDeclaration {
         name: String,
         initializer: Option<Box<SpannedAstNode>>,
+    },
+    ClassDeclaration {
+        name: String,
+        body: Box<SpannedAstNode>,
     },
     Block {
         declarations: Vec<SpannedAstNode>,

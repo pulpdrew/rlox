@@ -1,7 +1,7 @@
 use crate::ast::{AstNode, SpannedAstNode};
 use crate::error::ReportableError;
 use crate::executable::Executable;
-use crate::object::{ObjClosure, ObjFunction, ObjString};
+use crate::object::{ObjClass, ObjClosure, ObjFunction, ObjString};
 use crate::opcode::OpCode;
 use crate::token::{Kind, Span};
 use crate::value::Value;
@@ -78,7 +78,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                 self.compile_node(bin, expression)?;
                 bin.push_opcode(OpCode::Print, node_span);
             }
-            AstNode::Declaration {
+            AstNode::VarDeclaration {
                 name, initializer, ..
             } => {
                 let name_value = Value::from(name.clone());
@@ -89,6 +89,30 @@ impl<'a, W: Write> Compiler<'a, W> {
                 } else {
                     bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
                 }
+
+                if self.current_frame().is_global() {
+                    bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
+                    bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
+                    bin.push_opcode(OpCode::Pop, node_span);
+                } else {
+                    if let Some((_, distance)) = self.current_frame().resolve_local(name) {
+                        if distance == 0 {
+                            return Err(CompilationError {
+                                message: format!("Redeclaration of local variable {}", name),
+                                span: node_span,
+                            });
+                        }
+                    }
+
+                    self.current_frame_mut().add_local(name);
+                }
+            }
+            AstNode::ClassDeclaration { name, .. } => {
+                let name_value = Value::from(name.clone());
+                let class = Value::from(ObjClass {
+                    name: Box::new(ObjString::from(name.clone())),
+                });
+                bin.push_constant_inst(OpCode::Constant, class, node_span);
 
                 if self.current_frame().is_global() {
                     bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
