@@ -394,12 +394,12 @@ impl<'a, W: Write> Compiler<'a, W> {
                     bin.push_constant_inst(OpCode::GetGlobal, name_value, node_span);
                 }
             }
-            AstNode::Call { target, arguments } => {
+            AstNode::Invokation { target, arguments } => {
                 self.compile_node(bin, target)?;
                 for arg in arguments {
                     self.compile_node(bin, arg)?;
                 }
-                bin.push_opcode(OpCode::Call, node_span);
+                bin.push_opcode(OpCode::Invoke, node_span);
                 bin.push_u8(arguments.len() as u8, node_span);
             }
         };

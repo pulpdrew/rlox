@@ -1,12 +1,13 @@
 use crate::error::ReportableError;
 use crate::executable::Executable;
-use crate::object::{ObjClosure, ObjFunction, ObjUpvalue};
+use crate::object::{ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjUpvalue};
 use crate::opcode::OpCode;
 use crate::token::Span;
 use crate::value::Value;
 
 use std::collections::HashMap;
 use std::io::Write;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct RuntimeError {
@@ -159,13 +160,16 @@ impl VM {
                         self.ip = destination as usize;
                     }
                 }
-                OpCode::Call => {
+                OpCode::Invoke => {
                     let arg_count = self.read_u8(&closure.function.bin)?;
                     let callable = self.peek(arg_count as usize)?.clone();
 
                     match callable {
                         Value::Closure(closure) => {
                             self.call(&*closure, arg_count, output_stream)?;
+                        }
+                        Value::Class(class) => {
+                            self.instantiate(&class, arg_count, output_stream)?;
                         }
                         _ => {
                             return Err(RuntimeError {
@@ -252,6 +256,17 @@ impl VM {
         self.ip = ip_backup;
         self.base = base_backup;
 
+        Ok(())
+    }
+
+    fn instantiate<W: Write>(
+        &mut self,
+        class: &Rc<ObjClass>,
+        arg_count: u8,
+        output_stream: &mut W,
+    ) -> Result<(), RuntimeError> {
+        let instance = ObjInstance::from(class);
+        self.push(Value::from(instance));
         Ok(())
     }
 

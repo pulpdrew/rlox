@@ -177,3 +177,12 @@ impl Drop for ObjInstance {
         println!("**Dropped [{:?}]**", self)
     }
 }
+
+impl From<&Rc<ObjClass>> for ObjInstance {
+    fn from(class: &Rc<ObjClass>) -> Self {
+        ObjInstance {
+            class: class.clone(),
+            fields: HashMap::new(),
+        }
+    }
+}

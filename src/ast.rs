@@ -58,7 +58,7 @@ pub enum AstNode {
     Constant {
         value: Value,
     },
-    Call {
+    Invokation {
         target: Box<SpannedAstNode>,
         arguments: Vec<SpannedAstNode>,
     },

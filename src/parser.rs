@@ -491,7 +491,7 @@ impl Parser {
             let new_span = Span::merge(vec![&node.span, &rparen.span]);
 
             node = SpannedAstNode::new(
-                AstNode::Call {
+                AstNode::Invokation {
                     target: Box::new(node),
                     arguments,
                 },

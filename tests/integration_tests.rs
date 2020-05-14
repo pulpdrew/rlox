@@ -640,3 +640,26 @@ foo
     assert_eq!(expected_stderr, stderr.contents.trim());
     assert_eq!(expected_stdout, stdout.contents.trim());
 }
+
+#[test]
+fn instantiation() {
+    let source = "
+    class foo {}
+    print foo();
+    var f = foo();
+    print f;
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+foo instance
+foo instance
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}

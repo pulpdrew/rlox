@@ -32,7 +32,7 @@ pub enum OpCode {
     Jump,
     JumpIfTrue,
     JumpIfFalse,
-    Call,
+    Invoke,
     Closure,
     GetUpvalue,
     SetUpvalue,
