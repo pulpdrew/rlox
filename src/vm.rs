@@ -176,7 +176,24 @@ impl VM {
                             self.call(&*method.method, arg_count, output_stream)?;
                         }
                         Value::Class(class) => {
-                            self.instantiate(&class, arg_count, output_stream)?;
+                            // Run the init method if there is one
+                            if class.methods.borrow().contains_key("init") {
+                                let instance = ObjInstance::from(&class);
+                                let stack_len = self.stack.len();
+                                let instance_value = Value::from(instance);
+                                self.stack[stack_len - (arg_count + 1) as usize] =
+                                    instance_value.clone();
+                                self.call(
+                                    &class.methods.borrow_mut().get("init").unwrap(),
+                                    arg_count,
+                                    output_stream,
+                                )?;
+                                self.pop()?; // Pop the return value
+                                self.pop()?; // Pop the class (callable)
+                                self.push(Value::from(instance_value));
+                            } else {
+                                self.instantiate(&class, arg_count, output_stream)?;
+                            }
                         }
                         _ => {
                             return Err(RuntimeError {
