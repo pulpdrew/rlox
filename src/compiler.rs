@@ -22,7 +22,7 @@ impl ReportableError for CompilationError {
         self.span
     }
     fn message(&self) -> String {
-        format!("Runtime Error - {}", self.message)
+        format!("Compilation Error - {}", self.message)
     }
 }
 
@@ -122,67 +122,15 @@ impl<'a, W: Write> Compiler<'a, W> {
 
                 // Compile each method and add them to the class
                 for SpannedAstNode { node, span } in methods {
-                    if let Some(AstNode::FunDeclaration {
-                        name,
-                        parameters,
-                        body,
-                    }) = node
-                    {
-                        self.frames
-                            .push_back(Frame::new(false, FunctionType::Method));
+                    self.function_declaration(
+                        bin,
+                        &node.as_ref().unwrap(),
+                        node_span,
+                        FunctionType::Method,
+                    )?;
 
-                        // Add the parameters to the list of Locals
-                        self.current_frame_mut().add_local("this");
-                        for param in parameters.iter() {
-                            if let Kind::IdentifierLiteral(param_name) = &param.kind {
-                                self.current_frame_mut().add_local(param_name);
-                            } else {
-                                return Err(CompilationError {
-                                    message: "Expected parameter name to be IdentifierLiteral"
-                                        .to_string(),
-                                    span: param.span,
-                                });
-                            }
-                        }
-
-                        // Compile the method body
-                        let mut method_binary = Executable::new(name.clone());
-                        self.compile_node(&mut method_binary, body)?;
-
-                        // Always add return nil; to the end in case there is no explicit return statement
-                        method_binary.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
-                        method_binary.push_opcode(OpCode::Return, body.span);
-
-                        if cfg!(feature = "disassemble") {
-                            // Disassemble the method body
-                            method_binary.dump(self.output_stream);
-                        }
-
-                        // End the scope and restore the outer function's locals
-                        self.current_frame_mut()
-                            .end_scope(&mut method_binary, body.span);
-                        self.frames.pop_back();
-
-                        // Put the function object on the top of the stack and create a closure
-                        let value = Value::from(ObjFunction {
-                            name: Box::new(ObjString::from(name.clone())),
-                            arity: parameters.len() as u8,
-                            bin: method_binary,
-                            upvalues: self.current_frame_mut().upvalues.drain(0..).collect(),
-                        });
-                        bin.push_constant_inst(OpCode::Closure, value, node_span);
-
-                        // Add the method to the class
-                        bin.push_opcode(OpCode::Method, *span);
-                    } else {
-                        return Err(CompilationError {
-                            message: format!(
-                                "{}.methods AstNode contains nodes other than FunDeclaration",
-                                name
-                            ),
-                            span: node_span,
-                        });
-                    }
+                    // Add the method to the class
+                    bin.push_opcode(OpCode::Method, *span);
                 }
 
                 // Bind it to a local or global variable, as appropriate
@@ -318,53 +266,8 @@ impl<'a, W: Write> Compiler<'a, W> {
                 bin.push_opcode(OpCode::Pop, node_span);
                 self.current_frame_mut().end_scope(bin, block.span);
             }
-            AstNode::FunDeclaration {
-                name,
-                parameters,
-                body,
-            } => {
-                self.frames
-                    .push_back(Frame::new(false, FunctionType::Function));
-
-                // Add the parameters to the list of Locals
-                self.current_frame_mut().add_local(""); // Empty slot for "this"
-                for param in parameters.iter() {
-                    if let Kind::IdentifierLiteral(param_name) = &param.kind {
-                        self.current_frame_mut().add_local(param_name);
-                    } else {
-                        return Err(CompilationError {
-                            message: "Expected parameter name to be IdentifierLiteral".to_string(),
-                            span: param.span,
-                        });
-                    }
-                }
-
-                // Compile the function body
-                let mut function_binary = Executable::new(name.clone());
-                self.compile_node(&mut function_binary, body)?;
-
-                // Always add return nil; to the end in case there is no explicit return statement
-                function_binary.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
-                function_binary.push_opcode(OpCode::Return, body.span);
-
-                if cfg!(feature = "disassemble") {
-                    // Disassemble the function body
-                    function_binary.dump(self.output_stream);
-                }
-
-                // End the scope and restore the outer function's locals
-                self.current_frame_mut()
-                    .end_scope(&mut function_binary, body.span);
-                self.frames.pop_back();
-
-                // Put the function object on the top of the stack and create a closure
-                let value = Value::from(ObjFunction {
-                    name: Box::new(ObjString::from(name.clone())),
-                    arity: parameters.len() as u8,
-                    bin: function_binary,
-                    upvalues: self.current_frame_mut().upvalues.drain(0..).collect(),
-                });
-                bin.push_constant_inst(OpCode::Closure, value, node_span);
+            AstNode::FunDeclaration { name, .. } => {
+                self.function_declaration(bin, node, node_span, FunctionType::Function)?;
 
                 // Assign the function to the variable of the matching name
                 let name_value = Value::from(name.clone());
@@ -543,6 +446,83 @@ impl<'a, W: Write> Compiler<'a, W> {
             None
         }
     }
+
+    /// Compiles a function or method definition and leaves a closure
+    /// containing the function on the top of the stack
+    fn function_declaration(
+        &mut self,
+        bin: &mut Executable,
+        function_node: &AstNode,
+        function_span: Span,
+        function_type: FunctionType,
+    ) -> Result<(), CompilationError> {
+        if let AstNode::FunDeclaration {
+            name,
+            parameters,
+            body,
+        } = function_node
+        {
+            // Track the frame that will be on the call stack at runtime
+            let mut function_frame = Frame::new(false, function_type);
+
+            // Add "this" as a local for methods, or a dummy parameter for functions
+            if function_type == FunctionType::Method {
+                function_frame.add_local("this");
+            } else {
+                function_frame.add_local("");
+            }
+
+            // Add the parameters to the list of Locals
+            for param in parameters.iter() {
+                if let Kind::IdentifierLiteral(param_name) = &param.kind {
+                    function_frame.add_local(param_name);
+                } else {
+                    return Err(CompilationError {
+                        message: "Expected parameter name to be IdentifierLiteral".to_string(),
+                        span: param.span,
+                    });
+                }
+            }
+
+            // Push the frame so that nested functions can see it
+            self.frames.push_back(function_frame);
+
+            // Compile the function body
+            let mut function_binary = Executable::new(name.clone());
+            self.compile_node(&mut function_binary, body)?;
+
+            // Always add return nil; to the end in case there is no explicit return statement
+            function_binary.push_constant_inst(OpCode::Constant, Value::Nil, function_span);
+            function_binary.push_opcode(OpCode::Return, body.span);
+
+            // Disassemble the function body if enabled
+            if cfg!(feature = "disassemble") {
+                function_binary.dump(self.output_stream);
+            }
+
+            // End the scope and restore the outer function's frame
+            self.current_frame_mut()
+                .end_scope(&mut function_binary, body.span);
+            self.frames.pop_back();
+
+            // Put the function object on the top of the stack and create a closure
+            let value = Value::from(ObjFunction {
+                name: Box::new(ObjString::from(name.clone())),
+                arity: parameters.len() as u8,
+                bin: function_binary,
+                upvalues: self.current_frame_mut().upvalues.drain(0..).collect(),
+            });
+            bin.push_constant_inst(OpCode::Closure, value, function_span);
+
+            Ok(())
+        } else {
+            Err(CompilationError {
+                message: "compiler.function_declaration called with non-FunctionDeclaration node"
+                    .to_string(),
+                span: function_span,
+            })
+        }
+    }
 }
 
 fn destructure_node(node: &SpannedAstNode) -> Result<(&AstNode, Span), CompilationError> {
@@ -593,7 +573,7 @@ impl LocalScope {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum FunctionType {
     None,
     Function,

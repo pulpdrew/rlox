@@ -176,24 +176,7 @@ impl VM {
                             self.call(&*method.method, arg_count, output_stream)?;
                         }
                         Value::Class(class) => {
-                            // Run the init method if there is one
-                            if class.methods.borrow().contains_key("init") {
-                                let instance = ObjInstance::from(&class);
-                                let stack_len = self.stack.len();
-                                let instance_value = Value::from(instance);
-                                self.stack[stack_len - (arg_count + 1) as usize] =
-                                    instance_value.clone();
-                                self.call(
-                                    &class.methods.borrow_mut().get("init").unwrap(),
-                                    arg_count,
-                                    output_stream,
-                                )?;
-                                self.pop()?; // Pop the return value
-                                self.pop()?; // Pop the class (callable)
-                                self.push(Value::from(instance_value));
-                            } else {
-                                self.instantiate(&class, arg_count, output_stream)?;
-                            }
+                            self.instantiate(&class, arg_count, output_stream)?;
                         }
                         _ => {
                             return Err(RuntimeError {
@@ -238,10 +221,7 @@ impl VM {
                             .collect(),
                     );
 
-                    let closure = ObjClosure {
-                        function: function,
-                        upvalues,
-                    };
+                    let closure = ObjClosure { function, upvalues };
                     let closure_value = Value::from(closure);
                     self.push(closure_value);
                 }
@@ -404,28 +384,33 @@ impl VM {
         &mut self,
         class: &Rc<ObjClass>,
         arg_count: u8,
-        _output_stream: &mut W,
+        output_stream: &mut W,
     ) -> Result<(), RuntimeError> {
-        // Save the current IP and base to restore after returning
-        let ip_backup = self.ip;
-        let base_backup = self.base;
+        // Create a new instance
+        let instance = ObjInstance::from(class);
+        let instance_value = Value::from(instance);
 
-        // The arguments should already be on the stack.
-        // Adjust the base pointer to point at their start
-        self.base = self.stack.len() - (arg_count + 1) as usize;
+        // Run the init method if there is one
+        if class.methods.borrow().contains_key("init") {
+            // Use the new instance as "this"
+            let stack_len = self.stack.len();
+            self.stack[stack_len - (arg_count + 1) as usize] = instance_value.clone();
 
-        // Remove everything from the stack
-        for _ in self.base..self.stack.len() {
+            self.call(
+                &class.methods.borrow_mut().get("init").unwrap(),
+                arg_count,
+                output_stream,
+            )?;
+
+            // Ignore any return value
             self.pop()?;
         }
 
-        // Restore the ip and the base
-        self.ip = ip_backup;
-        self.base = base_backup;
-
+        // Pop the class (callable)
         self.pop()?;
-        let instance = ObjInstance::from(class);
-        self.push(Value::from(instance));
+
+        // Leave the new instance on the top of the stack
+        self.push(instance_value);
 
         Ok(())
     }
