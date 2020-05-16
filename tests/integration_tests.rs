@@ -642,6 +642,98 @@ foo
 }
 
 #[test]
+fn methods_basic() {
+    let source = "
+    class foo {
+        printx(x) {
+            print x;
+        }
+        add2(x) {
+            return x + 2;
+        }
+    }
+    var f = foo();
+    f.printx(2);
+    print f.add2(4);
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+2
+6
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
+
+#[test]
+fn methods_this() {
+    let source = "
+    class foo {
+        printx() {
+            print this.x;
+        }
+        add(x) {
+            this.x = this.x + x;
+        }
+    }
+    var f = foo();
+    f.x = 0;
+    f.printx();
+    f.add(5);
+    f.printx();
+    f.add(6);
+    f.printx();
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+0
+5
+11
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
+
+#[test]
+fn initializer() {
+    let source = "
+    class foo {
+        init(x, y, z) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+    }
+    var f = foo(1, 2, 3);
+    print f.x + f.y + f.z;
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+6
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
+
+#[test]
 fn instantiation() {
     let source = "
     class foo {}

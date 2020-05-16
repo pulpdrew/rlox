@@ -78,7 +78,7 @@ pub enum AstNode {
     },
     ClassDeclaration {
         name: String,
-        body: Box<SpannedAstNode>,
+        methods: Vec<SpannedAstNode>,
     },
     Block {
         declarations: Vec<SpannedAstNode>,

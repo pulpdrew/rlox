@@ -107,14 +107,42 @@ impl Parser {
     fn class_declaration(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.eat(Kind::Class, "Expected 'class' keyword")?;
         let (name, _) = self.id_token()?;
-        let body = self.block_statement()?;
+        self.eat(Kind::LeftBrace, "Expected '{' after class declaration")?;
 
-        let span = Span::merge(vec![&keyword.span, &body.span]);
+        let mut methods = vec![];
+        while self.current.kind != Kind::RightBrace && self.current.kind != Kind::Eof {
+            let (method_name, method_name_span) = self.id_token()?;
+            self.eat(Kind::LeftParen, "Expected '(' after method name")?;
+
+            let parameters = match self.current.kind {
+                Kind::RightParen => vec![],
+                Kind::IdentifierLiteral(_) => self.parameter_list()?,
+                _ => {
+                    return Err(ParsingError {
+                        message: "Expected parameter list or ')'.".to_string(),
+                        span: self.current.span,
+                    })
+                }
+            };
+            self.eat(Kind::RightParen, "Expected ')' after formal parameter list")?;
+            let body = self.block_statement()?;
+
+            let span = Span::merge(vec![&method_name_span, &body.span]);
+
+            methods.push(SpannedAstNode::new(
+                AstNode::FunDeclaration {
+                    name: method_name,
+                    parameters,
+                    body: Box::new(body),
+                },
+                span,
+            ));
+        }
+
+        let end_brace = self.eat(Kind::RightBrace, "Expected '}' after class body")?;
+        let span = Span::merge(vec![&keyword.span, &end_brace.span]);
         Ok(SpannedAstNode::new(
-            AstNode::ClassDeclaration {
-                name,
-                body: Box::new(body),
-            },
+            AstNode::ClassDeclaration { name, methods },
             span,
         ))
     }
@@ -553,6 +581,16 @@ impl Parser {
                     span,
                 ))
             }
+            Kind::This => {
+                let literal = self.advance();
+                let span = literal.span;
+                Ok(SpannedAstNode::new(
+                    AstNode::Variable {
+                        name: "this".to_string(),
+                    },
+                    span,
+                ))
+            }
             _ => Err(ParsingError {
                 span: self.current.span,
                 message: "Expected primary expression.".to_string(),
@@ -614,6 +652,7 @@ impl Parser {
 
     /// Consume tokens until current is '{', '}', or the token after a ';'
     fn synchronize(&mut self) {
+        self.advance();
         loop {
             match self.current.kind {
                 Kind::Semicolon | Kind::Eof => {

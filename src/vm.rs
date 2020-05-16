@@ -1,6 +1,6 @@
 use crate::error::ReportableError;
 use crate::executable::Executable;
-use crate::object::{ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjUpvalue};
+use crate::object::{ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjUpvalue};
 use crate::opcode::OpCode;
 use crate::token::Span;
 use crate::value::Value;
@@ -163,14 +163,19 @@ impl VM {
                 }
                 OpCode::Invoke => {
                     let arg_count = self.read_u8(&closure.function.bin)?;
-                    let callable = self.peek(arg_count as usize)?.clone();
+                    let callable = self.peek((arg_count + 1) as usize)?.clone();
 
                     match callable {
                         Value::Closure(closure) => {
                             self.call(&*closure, arg_count, output_stream)?;
                         }
+                        Value::BoundMethod(method) => {
+                            let stack_len = self.stack.len();
+                            self.stack[stack_len - (arg_count + 1) as usize] =
+                                Value::Instance(method.receiver.clone());
+                            self.call(&*method.method, arg_count, output_stream)?;
+                        }
                         Value::Class(class) => {
-                            self.pop()?;
                             self.instantiate(&class, arg_count, output_stream)?;
                         }
                         _ => {
@@ -253,7 +258,12 @@ impl VM {
 
                     let target_value = self.pop()?;
                     if let Value::Instance(instance) = target_value {
-                        if let Some(v) = instance.fields.borrow().get(name) {
+                        if let Some(method) = instance.class.methods.borrow().get(name) {
+                            self.push(Value::BoundMethod(Rc::new(ObjBoundMethod {
+                                receiver: instance.clone(),
+                                method: method.clone(),
+                            })));
+                        } else if let Some(v) = instance.fields.borrow().get(name) {
                             self.push(v.clone());
                         } else {
                             return Err(RuntimeError {
@@ -306,6 +316,30 @@ impl VM {
                         .borrow_mut()
                         .insert(index as usize, ObjUpvalue::from(self.peek(0)?.clone()))
                 }
+                OpCode::Method => {
+                    let closure_reference = self.pop()?;
+                    let class_reference = self.peek(0)?;
+
+                    if let Value::Class(class) = class_reference {
+                        if let Value::Closure(closure) = closure_reference {
+                            class
+                                .methods
+                                .borrow_mut()
+                                .insert(closure.function.name.string.clone(), closure.clone());
+                        } else {
+                            return Err(RuntimeError {
+                                message: "Expected a closure value at the top of the stack"
+                                    .to_string(),
+                                span: closure.function.bin.spans[self.ip - 1],
+                            });
+                        }
+                    } else {
+                        return Err(RuntimeError {
+                            message: "Expected a class value at stack[top - 1]".to_string(),
+                            span: closure.function.bin.spans[self.ip - 1],
+                        });
+                    }
+                }
             }
             if cfg!(feature = "disassemble") {
                 self.print_stack(output_stream);
@@ -329,7 +363,7 @@ impl VM {
 
         // The arguments should already be on the stack.
         // Adjust the base pointer to point at their start
-        self.base = self.stack.len() - arg_count as usize;
+        self.base = self.stack.len() - (arg_count + 1) as usize;
 
         // Execution should begin at the beginning of the function
         self.ip = 0;
@@ -352,11 +386,30 @@ impl VM {
     fn instantiate<W: Write>(
         &mut self,
         class: &Rc<ObjClass>,
-        _arg_count: u8,
+        arg_count: u8,
         _output_stream: &mut W,
     ) -> Result<(), RuntimeError> {
+        // Save the current IP and base to restore after returning
+        let ip_backup = self.ip;
+        let base_backup = self.base;
+
+        // The arguments should already be on the stack.
+        // Adjust the base pointer to point at their start
+        self.base = self.stack.len() - (arg_count + 1) as usize;
+
+        // Remove everything from the stack
+        for _ in self.base..self.stack.len() {
+            self.pop()?;
+        }
+
+        // Restore the ip and the base
+        self.ip = ip_backup;
+        self.base = base_backup;
+
+        self.pop()?;
         let instance = ObjInstance::from(class);
         self.push(Value::from(instance));
+
         Ok(())
     }
 

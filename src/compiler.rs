@@ -6,6 +6,7 @@ use crate::opcode::OpCode;
 use crate::token::{Kind, Span};
 use crate::value::Value;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::rc::Rc;
@@ -56,7 +57,7 @@ pub fn compile<W: Write>(
 impl<'a, W: Write> Compiler<'a, W> {
     pub fn new(output_stream: &'a mut W) -> Self {
         let mut scopes = VecDeque::new();
-        scopes.push_back(Frame::new(true));
+        scopes.push_back(Frame::new(true, FunctionType::None));
         Compiler {
             frames: scopes,
             output_stream,
@@ -108,13 +109,83 @@ impl<'a, W: Write> Compiler<'a, W> {
                     self.current_frame_mut().add_local(name);
                 }
             }
-            AstNode::ClassDeclaration { name, .. } => {
+            AstNode::ClassDeclaration { name, methods } => {
+                // Create the class without any of its methods
                 let name_value = Value::from(name.clone());
                 let class = Value::from(ObjClass {
                     name: Box::new(ObjString::from(name.clone())),
+                    methods: RefCell::new(HashMap::new()),
                 });
+
+                // Leave it on the top of the stack
                 bin.push_constant_inst(OpCode::Constant, class, node_span);
 
+                // Compile each method and add them to the class
+                for SpannedAstNode { node, span } in methods {
+                    if let Some(AstNode::FunDeclaration {
+                        name,
+                        parameters,
+                        body,
+                    }) = node
+                    {
+                        self.frames
+                            .push_back(Frame::new(false, FunctionType::Method));
+
+                        // Add the parameters to the list of Locals
+                        self.current_frame_mut().add_local("this");
+                        for param in parameters.iter() {
+                            if let Kind::IdentifierLiteral(param_name) = &param.kind {
+                                self.current_frame_mut().add_local(param_name);
+                            } else {
+                                return Err(CompilationError {
+                                    message: "Expected parameter name to be IdentifierLiteral"
+                                        .to_string(),
+                                    span: param.span,
+                                });
+                            }
+                        }
+
+                        // Compile the method body
+                        let mut method_binary = Executable::new(name.clone());
+                        self.compile_node(&mut method_binary, body)?;
+
+                        // Always add return nil; to the end in case there is no explicit return statement
+                        method_binary.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
+                        method_binary.push_opcode(OpCode::Return, body.span);
+
+                        if cfg!(feature = "disassemble") {
+                            // Disassemble the method body
+                            method_binary.dump(self.output_stream);
+                        }
+
+                        // End the scope and restore the outer function's locals
+                        self.current_frame_mut()
+                            .end_scope(&mut method_binary, body.span);
+                        self.frames.pop_back();
+
+                        // Put the function object on the top of the stack and create a closure
+                        let value = Value::from(ObjFunction {
+                            name: Box::new(ObjString::from(name.clone())),
+                            arity: parameters.len() as u8,
+                            bin: method_binary,
+                            upvalues: self.current_frame_mut().upvalues.drain(0..).collect(),
+                        });
+                        bin.push_constant_inst(OpCode::Closure, value, node_span);
+
+                        // Add the method to the class
+                        bin.push_opcode(OpCode::Method, *span);
+                    } else {
+                        return Err(CompilationError {
+                            message: format!(
+                                "{}.methods AstNode contains nodes other than FunDeclaration",
+                                name
+                            ),
+                            span: node_span,
+                        });
+                    }
+                }
+
+                // Bind it to a local or global variable, as appropriate
                 if self.current_frame().is_global() {
                     bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
                     bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
@@ -252,9 +323,11 @@ impl<'a, W: Write> Compiler<'a, W> {
                 parameters,
                 body,
             } => {
-                self.frames.push_back(Frame::new(false));
+                self.frames
+                    .push_back(Frame::new(false, FunctionType::Function));
 
                 // Add the parameters to the list of Locals
+                self.current_frame_mut().add_local(""); // Empty slot for "this"
                 for param in parameters.iter() {
                     if let Kind::IdentifierLiteral(param_name) = &param.kind {
                         self.current_frame_mut().add_local(param_name);
@@ -390,6 +463,13 @@ impl<'a, W: Write> Compiler<'a, W> {
                 }
             },
             AstNode::Variable { name } => {
+                if name == &"this".to_string() && !self.in_method() {
+                    return Err(CompilationError {
+                        message: "Cannot use 'this' outside of a class method.".to_string(),
+                        span: node_span,
+                    });
+                }
+
                 if let Some((index, _)) = self.current_frame().resolve_local(name) {
                     bin.push_opcode(OpCode::GetLocal, node_span);
                     bin.push_u8(index as u8, node_span);
@@ -403,6 +483,7 @@ impl<'a, W: Write> Compiler<'a, W> {
             }
             AstNode::Invokation { target, arguments } => {
                 self.compile_node(bin, target)?;
+                bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span); // To be replaced by "this"
                 for arg in arguments {
                     self.compile_node(bin, arg)?;
                 }
@@ -424,6 +505,12 @@ impl<'a, W: Write> Compiler<'a, W> {
 
     fn current_frame_mut(&mut self) -> &mut Frame {
         self.frames.back_mut().unwrap()
+    }
+
+    fn in_method(&self) -> bool {
+        self.frames
+            .iter()
+            .any(|f| f.function_type == FunctionType::Method)
     }
 
     fn resolve_upvalue(&mut self, frame_depth: usize, name: &str) -> Option<usize> {
@@ -506,22 +593,31 @@ impl LocalScope {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum FunctionType {
+    None,
+    Function,
+    Method,
+}
+
 /// A record of all the variables declared in a single function
 #[derive(Debug)]
 struct Frame {
     scopes: VecDeque<LocalScope>,
     upvalues: VecDeque<(bool, usize)>,
     is_global: bool,
+    function_type: FunctionType,
 }
 
 impl Frame {
-    fn new(is_global: bool) -> Self {
+    fn new(is_global: bool, function_type: FunctionType) -> Self {
         let mut scopes = VecDeque::new();
         scopes.push_back(LocalScope::new(0));
         Frame {
             scopes,
             is_global,
             upvalues: VecDeque::new(),
+            function_type,
         }
     }
 

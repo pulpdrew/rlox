@@ -1,4 +1,4 @@
-use crate::object::{ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjString};
+use crate::object::{ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjString};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops;
@@ -16,6 +16,7 @@ pub enum Value {
     String(Rc<ObjString>),
     Class(Rc<ObjClass>),
     Instance(Rc<ObjInstance>),
+    BoundMethod(Rc<ObjBoundMethod>),
 }
 
 impl fmt::Debug for Value {
@@ -29,6 +30,7 @@ impl fmt::Debug for Value {
             Value::String(s) => write!(f, "{:?}", s),
             Value::Class(c) => write!(f, "{:?}", c),
             Value::Instance(i) => write!(f, "{:?}", i),
+            Value::BoundMethod(m) => write!(f, "{:?}", m),
         }
     }
 }
@@ -44,6 +46,7 @@ impl fmt::Display for Value {
             Value::String(s) => write!(f, "{}", s),
             Value::Class(c) => write!(f, "{}", c),
             Value::Instance(i) => write!(f, "{}", i),
+            Value::BoundMethod(m) => write!(f, "{}", m),
         }
     }
 }
@@ -211,6 +214,10 @@ impl PartialEq for Value {
             },
             Value::Instance(l) => match other {
                 Value::Instance(r) => l == r,
+                _ => false,
+            },
+            Value::BoundMethod(l) => match other {
+                Value::BoundMethod(r) => l == r,
                 _ => false,
             },
         }

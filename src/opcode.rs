@@ -38,6 +38,7 @@ pub enum OpCode {
     SetUpvalue,
     ReadField,
     SetField,
+    Method,
 }
 
 impl From<u8> for OpCode {

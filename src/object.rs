@@ -93,6 +93,31 @@ impl From<Value> for ObjUpvalue {
 }
 
 #[derive(PartialEq)]
+pub struct ObjBoundMethod {
+    pub receiver: Rc<ObjInstance>,
+    pub method: Rc<ObjClosure>,
+}
+
+impl fmt::Display for ObjBoundMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.method)
+    }
+}
+
+impl fmt::Debug for ObjBoundMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(bound {:?})", self.method)
+    }
+}
+
+#[cfg(feature = "trace_drops")]
+impl Drop for ObjBoundMethod {
+    fn drop(&mut self) {
+        println!("**Dropped [{:?}]**", self)
+    }
+}
+
+#[derive(PartialEq)]
 pub struct ObjString {
     pub string: String,
 }
@@ -133,6 +158,7 @@ impl From<&str> for ObjString {
 #[derive(PartialEq)]
 pub struct ObjClass {
     pub name: Box<ObjString>,
+    pub methods: RefCell<HashMap<String, Rc<ObjClosure>>>,
 }
 
 impl fmt::Display for ObjClass {
