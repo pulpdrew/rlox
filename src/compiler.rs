@@ -11,12 +11,27 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::rc::Rc;
 
+/// The state of a compiler
 #[derive(Debug)]
 pub struct Compiler<'a, W: Write> {
+    /// The call frames (containing variables) that are expected
+    /// to be on the stack when the code currently being compiled
+    /// is executed.
     frames: VecDeque<Frame>,
+
+    /// The Write stream that compilation output is written to
     output_stream: &'a mut W,
 }
 
+/// Compile the given AST root nodes into an executable
+///
+/// Returns a closure representing the executable script if compilation is successful.
+/// Returns a `CompilerError` if compilation is unsuccessful.
+///
+/// # Arguments
+///
+/// * `program` - the declaration nodes that make up the program to be compiled
+/// * `output_stream` - the Write stream that any compilation output should be written to
 pub fn compile<W: Write>(
     program: Vec<SpannedAstNode>,
     output_stream: &mut W,
@@ -40,6 +55,7 @@ pub fn compile<W: Write>(
 }
 
 impl<'a, W: Write> Compiler<'a, W> {
+    /// A new compiler with only a global scope defined.
     pub fn new(output_stream: &'a mut W) -> Self {
         let mut scopes = VecDeque::new();
         scopes.push_back(Frame::new(true, FunctionType::None));
@@ -49,277 +65,15 @@ impl<'a, W: Write> Compiler<'a, W> {
         }
     }
 
+    /// Compile a single AST node into the provided binary.
     fn compile_node(
         &mut self,
         bin: &mut Executable,
         spanned_node: &SpannedAstNode,
     ) -> Result<(), CompilerError> {
-        let (node, node_span) = destructure_node(spanned_node)?;
+        let (node, node_span) = spanned_node.destructure()?;
 
         match node {
-            AstNode::ExpressionStmt { expression } => {
-                self.compile_node(bin, expression)?;
-                bin.push_opcode(OpCode::Pop, expression.span);
-            }
-            AstNode::Print { expression, .. } => {
-                self.compile_node(bin, expression)?;
-                bin.push_opcode(OpCode::Print, node_span);
-            }
-            AstNode::VarDeclaration {
-                name, initializer, ..
-            } => {
-                let name_value = Value::from(name.clone());
-
-                // Leave the initial value of the variable on the top of the stack
-                if let Some(init_expression) = initializer {
-                    self.compile_node(bin, init_expression)?;
-                } else {
-                    bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
-                }
-
-                if self.current_frame().is_global() {
-                    bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
-                    bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
-                    bin.push_opcode(OpCode::Pop, node_span);
-                } else {
-                    if let Some((_, distance)) = self.current_frame().resolve_local(name) {
-                        if distance == 0 {
-                            return Err(CompilerError {
-                                message: format!("Redeclaration of local variable {}", name),
-                                span: node_span,
-                            });
-                        }
-                    }
-
-                    self.current_frame_mut().add_local(name);
-                }
-            }
-            AstNode::ClassDeclaration {
-                name,
-                methods,
-                superclass,
-            } => {
-                // Create the class without any of its methods
-                let name_value = Value::from(name.clone());
-                let class = Value::from(ObjClass {
-                    name: Box::new(ObjString::from(name.clone())),
-                    methods: RefCell::new(HashMap::new()),
-                });
-
-                // Leave it on the top of the stack
-                bin.push_constant_inst(OpCode::Constant, class, node_span);
-
-                // Bind it to a local or global variable, as appropriate
-                if self.current_frame().is_global() {
-                    bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
-                    bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
-                    bin.push_opcode(OpCode::Pop, node_span);
-                } else {
-                    if let Some((_, distance)) = self.current_frame().resolve_local(name) {
-                        if distance == 0 {
-                            return Err(CompilerError {
-                                message: format!("Redeclaration of local variable {}", name),
-                                span: node_span,
-                            });
-                        }
-                    }
-                    self.current_frame_mut().add_local(name);
-                }
-
-                // Leave the superclass on the stack to be captured by any super calls
-                if let Some(superclass_name) = superclass {
-                    self.current_frame_mut().begin_scope();
-                    if let Some((index, _)) = self.current_frame().resolve_local(superclass_name) {
-                        bin.push_opcode(OpCode::GetLocal, node_span);
-                        bin.push_u8(index as u8, node_span);
-                    } else if let Some(index) = self.resolve_upvalue(0, superclass_name) {
-                        bin.push_opcode(OpCode::GetUpvalue, node_span);
-                        bin.push_u8(index as u8, node_span);
-                    } else {
-                        let name_value = Value::from(superclass_name.clone());
-                        bin.push_constant_inst(OpCode::GetGlobal, name_value, node_span);
-                    }
-                    self.current_frame_mut().add_local("super");
-                }
-
-                // Put the new class on the top of the stack
-                if let Some((index, _)) = self.current_frame().resolve_local(name) {
-                    bin.push_opcode(OpCode::GetLocal, node_span);
-                    bin.push_u8(index as u8, node_span);
-                } else {
-                    let name_value = Value::from(name.clone());
-                    bin.push_constant_inst(OpCode::GetGlobal, name_value, node_span);
-                }
-
-                // Inherit from the superclass if there is one
-                if superclass.is_some() {
-                    bin.push_opcode(OpCode::Inherit, node_span);
-                }
-
-                // Compile each method and add to the class
-                for SpannedAstNode { node, span } in methods {
-                    self.function_declaration(
-                        bin,
-                        &node.as_ref().unwrap(),
-                        node_span,
-                        FunctionType::Method,
-                    )?;
-
-                    // Add the method to the class
-                    bin.push_opcode(OpCode::Method, *span);
-                }
-
-                // Pop the class
-                bin.push_opcode(OpCode::Pop, node_span);
-
-                // Pop the superclass
-                if superclass.is_some() {
-                    self.current_frame_mut().end_scope(bin, node_span);
-                }
-            }
-            AstNode::Block {
-                declarations,
-                rbrace,
-            } => {
-                self.current_frame_mut().begin_scope();
-                for statement in declarations.iter() {
-                    self.compile_node(bin, statement)?
-                }
-
-                self.current_frame_mut().end_scope(bin, rbrace.span);
-            }
-            AstNode::If {
-                condition,
-                if_block,
-                else_block,
-                ..
-            } => {
-                self.compile_node(bin, condition)?;
-                bin.push_opcode(OpCode::JumpIfFalse, node_span);
-                let first_jump = bin.len();
-                bin.push_u16(0 as u16, node_span);
-                bin.push_opcode(OpCode::Pop, node_span);
-                self.compile_node(bin, if_block)?;
-
-                if bin.len() > u16::max_value() as usize {
-                    return Err(CompilerError {
-                        message: format!("Binary may not be more than {} bytes long.", bin.len()),
-                        span: node_span,
-                    });
-                }
-
-                bin.push_opcode(OpCode::Jump, node_span);
-                let second_jump = bin.len();
-                bin.push_u16(0 as u16, node_span);
-                bin.replace_u16(first_jump, bin.len() as u16);
-                bin.push_opcode(OpCode::Pop, node_span);
-
-                if let Some(else_block) = else_block {
-                    self.compile_node(bin, else_block)?;
-                }
-
-                if bin.len() > u16::max_value() as usize {
-                    return Err(CompilerError {
-                        message: format!("Binary may not be more than {} bytes long.", bin.len()),
-                        span: node_span,
-                    });
-                }
-                bin.replace_u16(second_jump, bin.len() as u16);
-            }
-            AstNode::While { condition, block } => {
-                let condition_index = bin.len() as u16;
-                self.compile_node(bin, condition)?;
-                bin.push_opcode(OpCode::JumpIfFalse, node_span);
-                let jump_to_end_index = bin.len();
-                bin.push_u16(0, node_span);
-                bin.push_opcode(OpCode::Pop, node_span);
-                self.compile_node(bin, block)?;
-                bin.push_opcode(OpCode::Jump, node_span);
-                bin.push_u16(condition_index, node_span);
-
-                if bin.len() > u16::max_value() as usize {
-                    return Err(CompilerError {
-                        message: format!("Binary may not be more than {} bytes long.", bin.len()),
-                        span: node_span,
-                    });
-                }
-                bin.replace_u16(jump_to_end_index, bin.len() as u16);
-                bin.push_opcode(OpCode::Pop, node_span);
-            }
-            AstNode::For {
-                initializer,
-                condition,
-                update,
-                block,
-            } => {
-                self.current_frame_mut().begin_scope();
-                if let Some(initializer) = initializer {
-                    self.compile_node(bin, initializer)?;
-                }
-
-                let condition_index = bin.len() as u16;
-                let jump_to_end_index = if let Some(condition) = condition {
-                    self.compile_node(bin, condition)?;
-                    bin.push_opcode(OpCode::JumpIfFalse, node_span);
-                    let jump_to_end_index = bin.len();
-                    bin.push_u16(0, node_span);
-                    bin.push_opcode(OpCode::Pop, condition.span);
-                    jump_to_end_index
-                } else {
-                    0
-                };
-
-                self.compile_node(bin, block)?;
-                if let Some(update) = update {
-                    self.compile_node(bin, update)?;
-                    bin.push_opcode(OpCode::Pop, update.span);
-                }
-                bin.push_opcode(OpCode::Jump, node_span);
-                bin.push_u16(condition_index, node_span);
-
-                if condition.is_some() {
-                    if bin.len() > u16::max_value() as usize {
-                        return Err(CompilerError {
-                            message: format!(
-                                "Binary may not be more than {} bytes long.",
-                                bin.len()
-                            ),
-                            span: node_span,
-                        });
-                    }
-                    bin.replace_u16(jump_to_end_index, bin.len() as u16);
-                }
-                bin.push_opcode(OpCode::Pop, node_span);
-                self.current_frame_mut().end_scope(bin, block.span);
-            }
-            AstNode::FunDeclaration { name, .. } => {
-                self.function_declaration(bin, node, node_span, FunctionType::Function)?;
-
-                // Assign the function to the variable of the matching name
-                let name_value = Value::from(name.clone());
-                if self.current_frame().is_global() {
-                    bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), node_span);
-                    bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
-                    bin.push_opcode(OpCode::Pop, node_span);
-                } else {
-                    self.current_frame_mut().add_local(name);
-                }
-            }
-            AstNode::Return { value } => {
-                match value {
-                    Some(expression) => {
-                        self.compile_node(bin, expression)?;
-                    }
-                    None => {
-                        bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
-                    }
-                }
-
-                bin.push_opcode(OpCode::Return, node_span)
-            }
-            AstNode::Constant { value } => {
-                bin.push_constant_inst(OpCode::Constant, value.clone(), node_span);
-            }
             AstNode::Unary {
                 operator,
                 expression,
@@ -368,21 +122,16 @@ impl<'a, W: Write> Compiler<'a, W> {
             AstNode::Assignment { lvalue, rvalue, .. } => match &lvalue.node {
                 Some(AstNode::Variable { name }) => {
                     self.compile_node(bin, rvalue)?;
-                    if let Some((index, _)) = self.current_frame().resolve_local(name) {
-                        bin.push_opcode(OpCode::SetLocal, node_span);
-                        bin.push_u8(index as u8, node_span);
-                    } else if let Some(index) = self.resolve_upvalue(0, name) {
-                        bin.push_opcode(OpCode::SetUpvalue, node_span);
-                        bin.push_u8(index as u8, node_span);
-                    } else {
-                        let name_value = Value::from(name.clone());
-                        bin.push_constant_inst(OpCode::SetGlobal, name_value, node_span);
-                    }
+                    self.set_variable(name, bin, &node_span);
                 }
                 Some(AstNode::FieldAccess { target, name }) => {
                     self.compile_node(bin, target)?;
                     self.compile_node(bin, rvalue)?;
-                    bin.push_constant_inst(OpCode::SetField, Value::from(name.clone()), node_span);
+                    bin.push_constant_inst(
+                        OpCode::SetField,
+                        Value::from(name.to_string()),
+                        node_span,
+                    );
                 }
                 _ => {
                     return Err(CompilerError {
@@ -392,23 +141,16 @@ impl<'a, W: Write> Compiler<'a, W> {
                 }
             },
             AstNode::Variable { name } => {
-                if name == &"this".to_string() && !self.in_method() {
+                if name == &"this".to_string() && !self.currently_within_method() {
                     return Err(CompilerError {
                         message: "Cannot use 'this' outside of a class method.".to_string(),
                         span: node_span,
                     });
                 }
-
-                if let Some((index, _)) = self.current_frame().resolve_local(name) {
-                    bin.push_opcode(OpCode::GetLocal, node_span);
-                    bin.push_u8(index as u8, node_span);
-                } else if let Some(index) = self.resolve_upvalue(0, name) {
-                    bin.push_opcode(OpCode::GetUpvalue, node_span);
-                    bin.push_u8(index as u8, node_span);
-                } else {
-                    let name_value = Value::from(name.clone());
-                    bin.push_constant_inst(OpCode::GetGlobal, name_value, node_span);
-                }
+                self.get_variable(name, bin, &node_span);
+            }
+            AstNode::Constant { value } => {
+                bin.push_constant_inst(OpCode::Constant, value.clone(), node_span);
             }
             AstNode::Invokation { target, arguments } => {
                 self.compile_node(bin, target)?;
@@ -421,7 +163,7 @@ impl<'a, W: Write> Compiler<'a, W> {
             }
             AstNode::FieldAccess { target, name } => {
                 self.compile_node(bin, target)?;
-                bin.push_constant_inst(OpCode::ReadField, Value::from(name.clone()), node_span);
+                bin.push_constant_inst(OpCode::ReadField, Value::from(name.to_string()), node_span);
             }
             AstNode::SuperAccess { name } => {
                 // Put the current instance on the stack
@@ -446,27 +188,263 @@ impl<'a, W: Write> Compiler<'a, W> {
                     });
                 }
 
-                bin.push_constant_inst(OpCode::GetSuper, Value::from(name.clone()), node_span);
+                bin.push_constant_inst(OpCode::GetSuper, Value::from(name.to_string()), node_span);
+            }
+            AstNode::ClassDeclaration {
+                name,
+                methods,
+                superclass,
+            } => {
+                // Create an empty class and bind it to a variable
+                let class = Value::from(ObjClass {
+                    name: Box::new(ObjString::from(name.clone())),
+                    methods: RefCell::new(HashMap::new()),
+                });
+                bin.push_constant_inst(OpCode::Constant, class, node_span);
+                self.declare_variable(name, bin, &node_span)?;
+
+                // Leave the superclass on the stack to be captured by any super calls
+                if let Some(superclass_name) = superclass {
+                    self.current_frame_mut().begin_scope();
+                    self.get_variable(superclass_name, bin, &node_span);
+                    self.declare_variable("super", bin, &node_span)?;
+                }
+
+                // Put the new class on the top of the stack
+                self.get_variable(name, bin, &node_span);
+
+                // Inherit from the superclass if there is one
+                if superclass.is_some() {
+                    bin.push_opcode(OpCode::Inherit, node_span);
+                }
+
+                // Compile each method and add to the class
+                for SpannedAstNode { node, span } in methods {
+                    self.function_declaration(
+                        bin,
+                        &node.as_ref().unwrap(),
+                        node_span,
+                        FunctionType::Method,
+                    )?;
+                    bin.push_opcode(OpCode::Method, *span);
+                }
+
+                // Pop the class, then the superclass
+                bin.push_opcode(OpCode::Pop, node_span);
+                if superclass.is_some() {
+                    self.current_frame_mut().end_scope(bin, node_span);
+                }
+            }
+            AstNode::FunDeclaration { name, .. } => {
+                self.function_declaration(bin, node, node_span, FunctionType::Function)?;
+                self.declare_variable(name, bin, &node_span)?;
+            }
+            AstNode::VarDeclaration {
+                name, initializer, ..
+            } => {
+                // Leave the initial value of the variable on the top of the stack
+                if let Some(init_expression) = initializer {
+                    self.compile_node(bin, init_expression)?;
+                } else {
+                    bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
+                }
+                self.declare_variable(name, bin, &node_span)?;
+            }
+            AstNode::ExpressionStmt { expression } => {
+                self.compile_node(bin, expression)?;
+                bin.push_opcode(OpCode::Pop, expression.span);
+            }
+            AstNode::Print { expression, .. } => {
+                self.compile_node(bin, expression)?;
+                bin.push_opcode(OpCode::Print, node_span);
+            }
+            AstNode::Return { value } => {
+                match value {
+                    Some(expression) => {
+                        self.compile_node(bin, expression)?;
+                    }
+                    None => {
+                        bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
+                    }
+                }
+                bin.push_opcode(OpCode::Return, node_span)
+            }
+            AstNode::Block { declarations } => {
+                self.current_frame_mut().begin_scope();
+                for statement in declarations.iter() {
+                    self.compile_node(bin, statement)?
+                }
+                self.current_frame_mut().end_scope(bin, node_span);
+            }
+            AstNode::If {
+                condition,
+                if_block,
+                else_block,
+                ..
+            } => {
+                self.compile_node(bin, condition)?;
+                bin.push_opcode(OpCode::JumpIfFalse, node_span);
+                let first_jump = bin.len();
+                bin.push_u16(0 as u16, node_span);
+                bin.push_opcode(OpCode::Pop, node_span);
+                self.compile_node(bin, if_block)?;
+
+                bin.assert_not_too_long(&node_span)?;
+
+                bin.push_opcode(OpCode::Jump, node_span);
+                let second_jump = bin.len();
+                bin.push_u16(0 as u16, node_span);
+                bin.replace_u16(first_jump, bin.len() as u16);
+                bin.push_opcode(OpCode::Pop, node_span);
+
+                if let Some(else_block) = else_block {
+                    self.compile_node(bin, else_block)?;
+                }
+
+                bin.assert_not_too_long(&node_span)?;
+                bin.replace_u16(second_jump, bin.len() as u16);
+            }
+            AstNode::While { condition, block } => {
+                let condition_index = bin.len() as u16;
+                self.compile_node(bin, condition)?;
+                bin.push_opcode(OpCode::JumpIfFalse, node_span);
+                let jump_to_end_index = bin.len();
+                bin.push_u16(0, node_span);
+                bin.push_opcode(OpCode::Pop, node_span);
+                self.compile_node(bin, block)?;
+                bin.push_opcode(OpCode::Jump, node_span);
+                bin.push_u16(condition_index, node_span);
+
+                bin.assert_not_too_long(&node_span)?;
+                bin.replace_u16(jump_to_end_index, bin.len() as u16);
+                bin.push_opcode(OpCode::Pop, node_span);
+            }
+            AstNode::For {
+                initializer,
+                condition,
+                update,
+                block,
+            } => {
+                self.current_frame_mut().begin_scope();
+                if let Some(initializer) = initializer {
+                    self.compile_node(bin, initializer)?;
+                }
+
+                let condition_index = bin.len() as u16;
+                let jump_to_end_index = if let Some(condition) = condition {
+                    self.compile_node(bin, condition)?;
+                    bin.push_opcode(OpCode::JumpIfFalse, node_span);
+                    let jump_to_end_index = bin.len();
+                    bin.push_u16(0, node_span);
+                    bin.push_opcode(OpCode::Pop, condition.span);
+                    jump_to_end_index
+                } else {
+                    0
+                };
+
+                self.compile_node(bin, block)?;
+                if let Some(update) = update {
+                    self.compile_node(bin, update)?;
+                    bin.push_opcode(OpCode::Pop, update.span);
+                }
+                bin.push_opcode(OpCode::Jump, node_span);
+                bin.push_u16(condition_index, node_span);
+
+                if condition.is_some() {
+                    bin.assert_not_too_long(&node_span)?;
+                    bin.replace_u16(jump_to_end_index, bin.len() as u16);
+                }
+                bin.push_opcode(OpCode::Pop, node_span);
+                self.current_frame_mut().end_scope(bin, block.span);
             }
         };
 
         Ok(())
     }
 
+    /// Emit the instructions to bind a new variable to the value that
+    /// is at the top of the stack. Consumes the value at the top of the
+    /// stack.
+    fn declare_variable(
+        &mut self,
+        name: &str,
+        bin: &mut Executable,
+        span: &Span,
+    ) -> Result<(), CompilerError> {
+        let name_value = Value::from(name);
+
+        if self.current_frame().is_global() {
+            bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), *span);
+            bin.push_constant_inst(OpCode::SetGlobal, name_value, *span);
+            bin.push_opcode(OpCode::Pop, *span);
+        } else {
+            if let Some((_, distance)) = self.current_frame().resolve_local(name) {
+                if distance == 0 {
+                    return Err(CompilerError {
+                        message: format!("Redeclaration of local variable {}", name),
+                        span: *span,
+                    });
+                }
+            }
+            self.current_frame_mut().add_local(name);
+        }
+
+        Ok(())
+    }
+
+    /// Emit the instructions to set an existing variable to the value at the top of the stack.
+    /// Does not consume the value at the top of the stack.
+    fn set_variable(&mut self, name: &str, bin: &mut Executable, span: &Span) {
+        if let Some((index, _)) = self.current_frame().resolve_local(name) {
+            bin.push_opcode(OpCode::SetLocal, *span);
+            bin.push_u8(index as u8, *span);
+        } else if let Some(index) = self.resolve_upvalue(0, name) {
+            bin.push_opcode(OpCode::SetUpvalue, *span);
+            bin.push_u8(index as u8, *span);
+        } else {
+            let name_value = Value::from(name);
+            bin.push_constant_inst(OpCode::SetGlobal, name_value, *span);
+        }
+    }
+
+    /// Emit the instructions to load a variable onto the top of the stack.
+    /// Prioritize local variables over upvalues (closure variables) over
+    /// global variables.
+    fn get_variable(&mut self, name: &str, bin: &mut Executable, span: &Span) {
+        if let Some((index, _)) = self.current_frame().resolve_local(name) {
+            bin.push_opcode(OpCode::GetLocal, *span);
+            bin.push_u8(index as u8, *span);
+        } else if let Some(index) = self.resolve_upvalue(0, name) {
+            bin.push_opcode(OpCode::GetUpvalue, *span);
+            bin.push_u8(index as u8, *span);
+        } else {
+            let name_value = Value::from(name);
+            bin.push_constant_inst(OpCode::GetGlobal, name_value, *span);
+        }
+    }
+
+    /// Get a reference to the current stack frame
     fn current_frame(&self) -> &Frame {
         self.frames.back().unwrap()
     }
 
+    /// Get a mutable reference to the current stack frame
     fn current_frame_mut(&mut self) -> &mut Frame {
         self.frames.back_mut().unwrap()
     }
 
-    fn in_method(&self) -> bool {
+    /// Indicates whether or not there is some frame on the stack that
+    /// belongs to a method, indicating the validity of `this`
+    fn currently_within_method(&self) -> bool {
         self.frames
             .iter()
             .any(|f| f.function_type == FunctionType::Method)
     }
 
+    /// Resolves a variable name to an upvalue index, if possible.
+    ///
+    /// First looks for an existing upvalue. If not found, then creates a new
+    /// one, if it can find the referenced variable on the stack.
     fn resolve_upvalue(&mut self, frame_depth: usize, name: &str) -> Option<usize> {
         if frame_depth >= self.frames.len() {
             return None;
@@ -576,20 +554,39 @@ impl<'a, W: Write> Compiler<'a, W> {
     }
 }
 
-/// Converts a `&SpannedAstNode` to a `(&AstNode, Span)` tuple, erroring if
-/// the AstNode is None.
-fn destructure_node(node: &SpannedAstNode) -> Result<(&AstNode, Span), CompilerError> {
-    if let SpannedAstNode {
-        node: Some(node),
-        span,
-    } = node
-    {
-        Ok((node, *span))
-    } else {
-        Err(CompilerError {
-            message: "Attempted to compile SpannedAstNode with node: None".to_string(),
-            span: node.span,
-        })
+impl Executable {
+    /// Errors if self is longer than the executable length limit
+    fn assert_not_too_long(&self, span: &Span) -> Result<(), CompilerError> {
+        if self.len() > u16::max_value() as usize {
+            Err(CompilerError {
+                message: format!(
+                    "Binary may not be more than {} bytes long.",
+                    u16::max_value()
+                ),
+                span: *span,
+            })
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl SpannedAstNode {
+    /// Converts a `&SpannedAstNode` to a `(&AstNode, Span)` tuple, erroring if
+    /// the AstNode is None.
+    fn destructure(&self) -> Result<(&AstNode, Span), CompilerError> {
+        if let SpannedAstNode {
+            node: Some(node),
+            span,
+        } = self
+        {
+            Ok((node, *span))
+        } else {
+            Err(CompilerError {
+                message: "Attempted to compile SpannedAstNode with node: None".to_string(),
+                span: self.span,
+            })
+        }
     }
 }
 

@@ -71,24 +71,31 @@ pub enum AstNode {
     SuperAccess {
         name: String,
     },
+    ClassDeclaration {
+        name: String,
+        methods: Vec<SpannedAstNode>,
+        superclass: Option<String>,
+    },
+    FunDeclaration {
+        name: String,
+        parameters: Vec<Token>,
+        body: Box<SpannedAstNode>,
+    },
+    VarDeclaration {
+        name: String,
+        initializer: Option<Box<SpannedAstNode>>,
+    },
     ExpressionStmt {
         expression: Box<SpannedAstNode>,
     },
     Print {
         expression: Box<SpannedAstNode>,
     },
-    VarDeclaration {
-        name: String,
-        initializer: Option<Box<SpannedAstNode>>,
-    },
-    ClassDeclaration {
-        name: String,
-        methods: Vec<SpannedAstNode>,
-        superclass: Option<String>,
+    Return {
+        value: Option<Box<SpannedAstNode>>,
     },
     Block {
         declarations: Vec<SpannedAstNode>,
-        rbrace: Token,
     },
     If {
         condition: Box<SpannedAstNode>,
@@ -104,13 +111,5 @@ pub enum AstNode {
         condition: Option<Box<SpannedAstNode>>,
         update: Option<Box<SpannedAstNode>>,
         block: Box<SpannedAstNode>,
-    },
-    FunDeclaration {
-        name: String,
-        parameters: Vec<Token>,
-        body: Box<SpannedAstNode>,
-    },
-    Return {
-        value: Option<Box<SpannedAstNode>>,
     },
 }

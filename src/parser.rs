@@ -342,10 +342,7 @@ impl Parser {
         let rbrace = self.eat(Kind::RightBrace, "Expected '}' after block statement")?;
         let new_span = Span::merge(vec![&lbrace.span, &rbrace.span]);
         Ok(SpannedAstNode::new(
-            AstNode::Block {
-                declarations,
-                rbrace,
-            },
+            AstNode::Block { declarations },
             new_span,
         ))
     }
