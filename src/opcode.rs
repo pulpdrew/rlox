@@ -29,6 +29,7 @@ pub enum OpCode {
     SetLongGlobal,
     GetLocal,
     SetLocal,
+    GetSuper,
     Jump,
     JumpIfTrue,
     JumpIfFalse,
@@ -39,6 +40,7 @@ pub enum OpCode {
     ReadField,
     SetField,
     Method,
+    Inherit,
 }
 
 impl From<u8> for OpCode {

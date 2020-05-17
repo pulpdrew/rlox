@@ -337,6 +337,72 @@ impl VM {
                         });
                     }
                 }
+                OpCode::Inherit => {
+                    let superclass = self.peek(1)?;
+                    if let Value::Class(superclass) = superclass {
+                        let class = self.peek(0)?;
+                        if let Value::Class(class) = class {
+                            for (method_name, method) in superclass.methods.borrow().iter() {
+                                class
+                                    .methods
+                                    .borrow_mut()
+                                    .insert(method_name.clone(), method.clone());
+                            }
+                        } else {
+                            return Err(RuntimeError {
+                                message: "Cannot inherit into a non-class value".to_string(),
+                                span: closure.function.bin.spans[self.ip - 1],
+                            });
+                        }
+                    } else {
+                        return Err(RuntimeError {
+                            message: "Cannot inherit from a non-class value".to_string(),
+                            span: closure.function.bin.spans[self.ip - 1],
+                        });
+                    }
+                }
+                OpCode::GetSuper => {
+                    if let Value::Class(class) = self.pop()? {
+                        let method_name_index = self.read_u8(&closure.function.bin)?;
+                        let method_name =
+                            closure.function.bin.get_constant(method_name_index as u16);
+                        let method_name = if let Value::String(string) = method_name {
+                            &string.string
+                        } else {
+                            return Err(RuntimeError {
+                                message: format!(
+                                    "Expected string constant argument but got {}",
+                                    method_name
+                                ),
+                                span: closure.function.bin.spans[self.ip - 1],
+                            });
+                        };
+
+                        if let Some(method) = class.methods.borrow().get(method_name) {
+                            if let Value::Instance(instance) = self.pop()? {
+                                self.push(Value::BoundMethod(Rc::new(ObjBoundMethod {
+                                    receiver: instance.clone(),
+                                    method: method.clone(),
+                                })));
+                            } else {
+                                return Err(RuntimeError {
+                                    message: "expected receiver instance on the stack".to_string(),
+                                    span: closure.function.bin.spans[self.ip - 1],
+                                });
+                            }
+                        } else {
+                            return Err(RuntimeError {
+                                message: format!("'super' has no method {}", method_name),
+                                span: closure.function.bin.spans[self.ip - 1],
+                            });
+                        }
+                    } else {
+                        return Err(RuntimeError {
+                            message: "'super' is not a class".to_string(),
+                            span: closure.function.bin.spans[self.ip - 1],
+                        });
+                    }
+                }
             }
             if cfg!(feature = "disassemble") {
                 self.print_stack(output_stream);

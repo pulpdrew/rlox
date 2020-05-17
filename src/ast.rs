@@ -66,6 +66,9 @@ pub enum AstNode {
         target: Box<SpannedAstNode>,
         name: String,
     },
+    SuperAccess {
+        name: String,
+    },
     ExpressionStmt {
         expression: Box<SpannedAstNode>,
     },
@@ -79,6 +82,7 @@ pub enum AstNode {
     ClassDeclaration {
         name: String,
         methods: Vec<SpannedAstNode>,
+        superclass: Option<String>,
     },
     Block {
         declarations: Vec<SpannedAstNode>,

@@ -107,6 +107,21 @@ impl Parser {
     fn class_declaration(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.eat(Kind::Class, "Expected 'class' keyword")?;
         let (name, _) = self.id_token()?;
+
+        let superclass = if let Kind::Less = self.current.kind {
+            self.advance();
+            let (superclass_name, superclass_span) = self.id_token()?;
+            if superclass_name == name {
+                return Err(ParsingError {
+                    message: format!("Class {} cannot inherit from itself", superclass_name),
+                    span: superclass_span,
+                });
+            }
+            Some(superclass_name)
+        } else {
+            None
+        };
+
         self.eat(Kind::LeftBrace, "Expected '{' after class declaration")?;
 
         let mut methods = vec![];
@@ -142,7 +157,11 @@ impl Parser {
         let end_brace = self.eat(Kind::RightBrace, "Expected '}' after class body")?;
         let span = Span::merge(vec![&keyword.span, &end_brace.span]);
         Ok(SpannedAstNode::new(
-            AstNode::ClassDeclaration { name, methods },
+            AstNode::ClassDeclaration {
+                name,
+                methods,
+                superclass,
+            },
             span,
         ))
     }
@@ -589,6 +608,15 @@ impl Parser {
                         name: "this".to_string(),
                     },
                     span,
+                ))
+            }
+            Kind::Super => {
+                let keyword_span = self.advance().span;
+                self.eat(Kind::Dot, "Expected '.' after 'super'.")?;
+                let (name, name_span) = self.id_token()?;
+                Ok(SpannedAstNode::new(
+                    AstNode::SuperAccess { name },
+                    Span::merge(vec![&keyword_span, &name_span]),
                 ))
             }
             _ => Err(ParsingError {

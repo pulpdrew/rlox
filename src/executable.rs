@@ -168,6 +168,8 @@ impl Executable {
             OpCode::ReadField => self.constant_instruction("ReadField", offset, out),
             OpCode::SetField => self.constant_instruction("SetField", offset, out),
             OpCode::Method => self.simple_instruction("Method", offset, out),
+            OpCode::Inherit => self.simple_instruction("Inherit", offset, out),
+            OpCode::GetSuper => self.constant_instruction("GetSuper", offset, out),
         }
     }
 

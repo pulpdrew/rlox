@@ -705,6 +705,69 @@ fn methods_this() {
     assert_eq!(expected_stderr, stderr.contents.trim());
     assert_eq!(expected_stdout, stdout.contents.trim());
 }
+#[test]
+fn methods_inheritance() {
+    let source = "
+    class Parent {
+        foo(x) {
+            print x;
+        }
+    }
+    class Child < Parent {
+        bar(y) {
+            print y;
+        }
+    }
+    var c = Child();
+    c.bar(8);
+    c.foo(9);
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+8
+9
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
+
+#[test]
+fn methods_override() {
+    let source = "
+    class Parent {
+        foo(x) {
+            print x;
+        }
+    }
+    class Child < Parent {
+        foo(y) {
+            super.foo(y);
+            print y + 1;
+        }
+    }
+    var c = Child();
+    c.foo(8);
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+8
+9
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
 
 #[test]
 fn initializer() {

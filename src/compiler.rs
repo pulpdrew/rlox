@@ -109,7 +109,11 @@ impl<'a, W: Write> Compiler<'a, W> {
                     self.current_frame_mut().add_local(name);
                 }
             }
-            AstNode::ClassDeclaration { name, methods } => {
+            AstNode::ClassDeclaration {
+                name,
+                methods,
+                superclass,
+            } => {
                 // Create the class without any of its methods
                 let name_value = Value::from(name.clone());
                 let class = Value::from(ObjClass {
@@ -119,19 +123,6 @@ impl<'a, W: Write> Compiler<'a, W> {
 
                 // Leave it on the top of the stack
                 bin.push_constant_inst(OpCode::Constant, class, node_span);
-
-                // Compile each method and add them to the class
-                for SpannedAstNode { node, span } in methods {
-                    self.function_declaration(
-                        bin,
-                        &node.as_ref().unwrap(),
-                        node_span,
-                        FunctionType::Method,
-                    )?;
-
-                    // Add the method to the class
-                    bin.push_opcode(OpCode::Method, *span);
-                }
 
                 // Bind it to a local or global variable, as appropriate
                 if self.current_frame().is_global() {
@@ -147,8 +138,58 @@ impl<'a, W: Write> Compiler<'a, W> {
                             });
                         }
                     }
-
                     self.current_frame_mut().add_local(name);
+                }
+
+                // Leave the superclass on the stack to be captured by any super calls
+                if let Some(superclass_name) = superclass {
+                    self.current_frame_mut().begin_scope();
+                    if let Some((index, _)) = self.current_frame().resolve_local(superclass_name) {
+                        bin.push_opcode(OpCode::GetLocal, node_span);
+                        bin.push_u8(index as u8, node_span);
+                    } else if let Some(index) = self.resolve_upvalue(0, superclass_name) {
+                        bin.push_opcode(OpCode::GetUpvalue, node_span);
+                        bin.push_u8(index as u8, node_span);
+                    } else {
+                        let name_value = Value::from(superclass_name.clone());
+                        bin.push_constant_inst(OpCode::GetGlobal, name_value, node_span);
+                    }
+                    self.current_frame_mut().add_local("super");
+                }
+
+                // Put the new class on the top of the stack
+                if let Some((index, _)) = self.current_frame().resolve_local(name) {
+                    bin.push_opcode(OpCode::GetLocal, node_span);
+                    bin.push_u8(index as u8, node_span);
+                } else {
+                    let name_value = Value::from(name.clone());
+                    bin.push_constant_inst(OpCode::GetGlobal, name_value, node_span);
+                }
+
+                // Inherit from the superclass if there is one
+                if superclass.is_some() {
+                    bin.push_opcode(OpCode::Inherit, node_span);
+                }
+
+                // Compile each method and add to the class
+                for SpannedAstNode { node, span } in methods {
+                    self.function_declaration(
+                        bin,
+                        &node.as_ref().unwrap(),
+                        node_span,
+                        FunctionType::Method,
+                    )?;
+
+                    // Add the method to the class
+                    bin.push_opcode(OpCode::Method, *span);
+                }
+
+                // Pop the class
+                bin.push_opcode(OpCode::Pop, node_span);
+
+                // Pop the superclass
+                if superclass.is_some() {
+                    self.current_frame_mut().end_scope(bin, node_span);
                 }
             }
             AstNode::Block {
@@ -396,6 +437,31 @@ impl<'a, W: Write> Compiler<'a, W> {
             AstNode::FieldAccess { target, name } => {
                 self.compile_node(bin, target)?;
                 bin.push_constant_inst(OpCode::ReadField, Value::from(name.clone()), node_span);
+            }
+            AstNode::SuperAccess { name } => {
+                // Put the current instance on the stack
+                if let Some((index, _)) = self.current_frame().resolve_local("this") {
+                    bin.push_opcode(OpCode::GetLocal, node_span);
+                    bin.push_u8(index as u8, node_span);
+                } else {
+                    return Err(CompilationError {
+                        message: "'super' may not be used outside methods".to_string(),
+                        span: node_span,
+                    });
+                }
+
+                // Put the superclass on the stack
+                if let Some(index) = self.resolve_upvalue(0, "super") {
+                    bin.push_opcode(OpCode::GetUpvalue, node_span);
+                    bin.push_u8(index as u8, node_span);
+                } else {
+                    return Err(CompilationError {
+                        message: "No superclass available here".to_string(),
+                        span: node_span,
+                    });
+                }
+
+                bin.push_constant_inst(OpCode::GetSuper, Value::from(name.clone()), node_span);
             }
         };
 
