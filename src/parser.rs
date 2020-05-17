@@ -1,23 +1,8 @@
 use crate::ast::{AstNode, SpannedAstNode};
-use crate::error::ReportableError;
+use crate::error::ParsingError;
 use crate::scanner::Scanner;
 use crate::token::{Kind, Span, Token};
 use crate::value::Value;
-
-#[derive(Debug)]
-pub struct ParsingError {
-    message: String,
-    span: Span,
-}
-
-impl ReportableError for ParsingError {
-    fn span(&self) -> Span {
-        self.span
-    }
-    fn message(&self) -> String {
-        format!("Parsing Error - {}", self.message)
-    }
-}
 
 #[derive(Debug)]
 pub struct Parser {

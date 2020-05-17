@@ -18,6 +18,8 @@ impl SpannedAstNode {
         }
     }
 
+    /// Create and return a new AstNode by copying the given `node` and tagging it
+    /// with the given `span`
     pub fn respan(node: SpannedAstNode, span: Span) -> Self {
         SpannedAstNode {
             node: node.node,

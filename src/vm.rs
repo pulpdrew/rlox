@@ -1,4 +1,4 @@
-use crate::error::ReportableError;
+use crate::error::RuntimeError;
 use crate::executable::Executable;
 use crate::object::{ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjUpvalue};
 use crate::opcode::OpCode;
@@ -9,21 +9,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Write;
 use std::rc::Rc;
-
-#[derive(Debug)]
-pub struct RuntimeError {
-    message: String,
-    span: Span,
-}
-
-impl ReportableError for RuntimeError {
-    fn span(&self) -> Span {
-        self.span
-    }
-    fn message(&self) -> String {
-        format!("Runtime Error - {}", self.message)
-    }
-}
 
 #[derive(Debug, Default)]
 pub struct VM {

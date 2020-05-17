@@ -2,6 +2,10 @@ use crate::token::Span;
 use std::cmp;
 use std::io::Write;
 
+pub use crate::compiler_error::*;
+pub use crate::parser_error::*;
+pub use crate::vm_error::*;
+
 /// The error trait required on any input to `ErrorReporter`.
 pub trait ReportableError {
     fn span(&self) -> Span;

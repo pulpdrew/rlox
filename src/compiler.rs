@@ -1,5 +1,5 @@
 use crate::ast::{AstNode, SpannedAstNode};
-use crate::error::ReportableError;
+use crate::error::CompilerError;
 use crate::executable::Executable;
 use crate::object::{ObjClass, ObjClosure, ObjFunction, ObjString};
 use crate::opcode::OpCode;
@@ -12,21 +12,6 @@ use std::io::Write;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct CompilationError {
-    message: String,
-    span: Span,
-}
-
-impl ReportableError for CompilationError {
-    fn span(&self) -> Span {
-        self.span
-    }
-    fn message(&self) -> String {
-        format!("Compilation Error - {}", self.message)
-    }
-}
-
-#[derive(Debug)]
 pub struct Compiler<'a, W: Write> {
     frames: VecDeque<Frame>,
     output_stream: &'a mut W,
@@ -35,7 +20,7 @@ pub struct Compiler<'a, W: Write> {
 pub fn compile<W: Write>(
     program: Vec<SpannedAstNode>,
     output_stream: &mut W,
-) -> Result<ObjClosure, CompilationError> {
+) -> Result<ObjClosure, CompilerError> {
     let mut compiler = Compiler::new(output_stream);
     let mut bin = Executable::new(String::from("script"));
 
@@ -68,7 +53,7 @@ impl<'a, W: Write> Compiler<'a, W> {
         &mut self,
         bin: &mut Executable,
         spanned_node: &SpannedAstNode,
-    ) -> Result<(), CompilationError> {
+    ) -> Result<(), CompilerError> {
         let (node, node_span) = destructure_node(spanned_node)?;
 
         match node {
@@ -99,7 +84,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                 } else {
                     if let Some((_, distance)) = self.current_frame().resolve_local(name) {
                         if distance == 0 {
-                            return Err(CompilationError {
+                            return Err(CompilerError {
                                 message: format!("Redeclaration of local variable {}", name),
                                 span: node_span,
                             });
@@ -132,7 +117,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                 } else {
                     if let Some((_, distance)) = self.current_frame().resolve_local(name) {
                         if distance == 0 {
-                            return Err(CompilationError {
+                            return Err(CompilerError {
                                 message: format!("Redeclaration of local variable {}", name),
                                 span: node_span,
                             });
@@ -217,7 +202,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                 self.compile_node(bin, if_block)?;
 
                 if bin.len() > u16::max_value() as usize {
-                    return Err(CompilationError {
+                    return Err(CompilerError {
                         message: format!("Binary may not be more than {} bytes long.", bin.len()),
                         span: node_span,
                     });
@@ -234,7 +219,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                 }
 
                 if bin.len() > u16::max_value() as usize {
-                    return Err(CompilationError {
+                    return Err(CompilerError {
                         message: format!("Binary may not be more than {} bytes long.", bin.len()),
                         span: node_span,
                     });
@@ -253,7 +238,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                 bin.push_u16(condition_index, node_span);
 
                 if bin.len() > u16::max_value() as usize {
-                    return Err(CompilationError {
+                    return Err(CompilerError {
                         message: format!("Binary may not be more than {} bytes long.", bin.len()),
                         span: node_span,
                     });
@@ -294,7 +279,7 @@ impl<'a, W: Write> Compiler<'a, W> {
 
                 if condition.is_some() {
                     if bin.len() > u16::max_value() as usize {
-                        return Err(CompilationError {
+                        return Err(CompilerError {
                             message: format!(
                                 "Binary may not be more than {} bytes long.",
                                 bin.len()
@@ -344,7 +329,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                     Kind::Minus => bin.push_opcode(OpCode::Negate, node_span),
                     Kind::Bang => bin.push_opcode(OpCode::Not, node_span),
                     _ => {
-                        return Err(CompilationError {
+                        return Err(CompilerError {
                             message: format!("Invalid unary operator {:?}", operator),
                             span: operator.span,
                         })
@@ -373,7 +358,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                         bin.push_opcode(OpCode::Not, node_span);
                     }
                     _ => {
-                        return Err(CompilationError {
+                        return Err(CompilerError {
                             message: format!("Invalid binary operator {:?}", operator),
                             span: operator.span,
                         })
@@ -400,7 +385,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                     bin.push_constant_inst(OpCode::SetField, Value::from(name.clone()), node_span);
                 }
                 _ => {
-                    return Err(CompilationError {
+                    return Err(CompilerError {
                         message: format!("Assignment to non-lvalue {:?}", lvalue),
                         span: lvalue.span,
                     });
@@ -408,7 +393,7 @@ impl<'a, W: Write> Compiler<'a, W> {
             },
             AstNode::Variable { name } => {
                 if name == &"this".to_string() && !self.in_method() {
-                    return Err(CompilationError {
+                    return Err(CompilerError {
                         message: "Cannot use 'this' outside of a class method.".to_string(),
                         span: node_span,
                     });
@@ -444,7 +429,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                     bin.push_opcode(OpCode::GetLocal, node_span);
                     bin.push_u8(index as u8, node_span);
                 } else {
-                    return Err(CompilationError {
+                    return Err(CompilerError {
                         message: "'super' may not be used outside methods".to_string(),
                         span: node_span,
                     });
@@ -455,7 +440,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                     bin.push_opcode(OpCode::GetUpvalue, node_span);
                     bin.push_u8(index as u8, node_span);
                 } else {
-                    return Err(CompilationError {
+                    return Err(CompilerError {
                         message: "No superclass available here".to_string(),
                         span: node_span,
                     });
@@ -521,7 +506,7 @@ impl<'a, W: Write> Compiler<'a, W> {
         function_node: &AstNode,
         function_span: Span,
         function_type: FunctionType,
-    ) -> Result<(), CompilationError> {
+    ) -> Result<(), CompilerError> {
         if let AstNode::FunDeclaration {
             name,
             parameters,
@@ -543,7 +528,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                 if let Kind::IdentifierLiteral(param_name) = &param.kind {
                     function_frame.add_local(param_name);
                 } else {
-                    return Err(CompilationError {
+                    return Err(CompilerError {
                         message: "Expected parameter name to be IdentifierLiteral".to_string(),
                         span: param.span,
                     });
@@ -582,7 +567,7 @@ impl<'a, W: Write> Compiler<'a, W> {
 
             Ok(())
         } else {
-            Err(CompilationError {
+            Err(CompilerError {
                 message: "compiler.function_declaration called with non-FunctionDeclaration node"
                     .to_string(),
                 span: function_span,
@@ -591,7 +576,9 @@ impl<'a, W: Write> Compiler<'a, W> {
     }
 }
 
-fn destructure_node(node: &SpannedAstNode) -> Result<(&AstNode, Span), CompilationError> {
+/// Converts a `&SpannedAstNode` to a `(&AstNode, Span)` tuple, erroring if
+/// the AstNode is None.
+fn destructure_node(node: &SpannedAstNode) -> Result<(&AstNode, Span), CompilerError> {
     if let SpannedAstNode {
         node: Some(node),
         span,
@@ -599,7 +586,7 @@ fn destructure_node(node: &SpannedAstNode) -> Result<(&AstNode, Span), Compilati
     {
         Ok((node, *span))
     } else {
-        Err(CompilationError {
+        Err(CompilerError {
             message: "Attempted to compile SpannedAstNode with node: None".to_string(),
             span: node.span,
         })
