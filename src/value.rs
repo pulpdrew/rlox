@@ -79,6 +79,7 @@ impl Value {
         }
     }
 
+    /// Indicates whether the Value is a `String` variant
     pub fn is_string(&self) -> bool {
         if let Value::String(_) = self {
             true

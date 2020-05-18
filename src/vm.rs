@@ -12,13 +12,21 @@ use std::rc::Rc;
 
 #[derive(Debug, Default)]
 pub struct VM {
+    /// The index of the next byte to be read from the executable
     ip: usize,
+
+    /// The index in `stack` that is the bottom of the current frame
     base: usize,
+
+    /// The runtime value stack
     stack: Vec<Value>,
+
+    /// The current global variables
     globals: HashMap<String, Value>,
 }
 
 impl VM {
+    /// Create a new, empty VM
     pub fn new() -> Self {
         VM {
             ip: 0,
@@ -28,6 +36,7 @@ impl VM {
         }
     }
 
+    /// Reset the VM's state, keeping the global variables
     pub fn reset(&mut self) {
         self.ip = 0;
         self.base = 0;
@@ -47,7 +56,8 @@ impl VM {
                     .disassemble_instruction(self.ip, output_stream);
             }
 
-            match OpCode::from(self.read_u8(&closure.function.bin)?) {
+            let op = OpCode::from(self.read_u8(&closure.function.bin)?);
+            match op {
                 OpCode::Constant => {
                     let index = self.read_u8(&closure.function.bin)? as u16;
                     self.push(closure.function.bin.get_constant(index).clone());
@@ -57,39 +67,33 @@ impl VM {
                     self.push(closure.function.bin.get_constant(index).clone());
                 }
                 OpCode::Negate => {
-                    if self.peek(0)?.is_number() {
-                        let value = -self.peek(0)?.clone();
-                        self.pop()?;
-                        self.push(value);
-                    } else {
-                        return Err(RuntimeError {
-                            message: String::from("Cannot negate non-numeric types"),
-                            span: closure.function.bin.spans[self.ip - 1],
-                        });
-                    }
+                    let argument = self.pop()?;
+                    argument.assert_is_number_or(
+                        "Cannot negate non-numeric types",
+                        closure.function.bin.spans[self.ip - 1],
+                    )?;
+                    self.push(-argument);
                 }
                 OpCode::Pop => {
                     self.pop()?;
                 }
                 OpCode::Not => {
-                    let right = self.peek(0);
-                    let value = Value::Bool(!right?.is_truthy());
-                    self.pop()?;
-                    self.push(value);
+                    let argument = self.pop()?;
+                    self.push(Value::from(!argument.is_truthy()));
                 }
                 OpCode::Return => {
                     self.stack[self.base] = self.peek(0)?.clone();
                     return Ok(());
                 }
-                op @ OpCode::Add
-                | op @ OpCode::Subtract
-                | op @ OpCode::Multiply
-                | op @ OpCode::Divide
-                | op @ OpCode::Less
-                | op @ OpCode::LessEqual
-                | op @ OpCode::Greater
-                | op @ OpCode::GreaterEqual
-                | op @ OpCode::Equal => match self.binary_op(&op, &closure.function.bin) {
+                OpCode::Add
+                | OpCode::Subtract
+                | OpCode::Multiply
+                | OpCode::Divide
+                | OpCode::Less
+                | OpCode::LessEqual
+                | OpCode::Greater
+                | OpCode::GreaterEqual
+                | OpCode::Equal => match self.binary_op(&op, &closure.function.bin) {
                     Ok(()) => {}
                     Err(e) => return Err(e),
                 },
@@ -165,7 +169,7 @@ impl VM {
                         }
                         _ => {
                             return Err(RuntimeError {
-                                message: format!("Cannot call {}", callable),
+                                message: format!("Cannot invoke {}", callable),
                                 span: closure.function.bin.spans[self.ip - 1],
                             });
                         }
@@ -299,51 +303,36 @@ impl VM {
                         .insert(index as usize, ObjUpvalue::from(self.peek(0)?.clone()))
                 }
                 OpCode::Method => {
-                    let closure_reference = self.pop()?;
-                    let class_reference = self.peek(0)?;
+                    let method_closure = self.pop()?.unwrap_closure_or(
+                        "Expected a closure value at the top of the stack",
+                        closure.function.bin.spans[self.ip - 1],
+                    )?;
 
-                    if let Value::Class(class) = class_reference {
-                        if let Value::Closure(closure) = closure_reference {
-                            class
-                                .methods
-                                .borrow_mut()
-                                .insert(closure.function.name.string.clone(), closure.clone());
-                        } else {
-                            return Err(RuntimeError {
-                                message: "Expected a closure value at the top of the stack"
-                                    .to_string(),
-                                span: closure.function.bin.spans[self.ip - 1],
-                            });
-                        }
-                    } else {
-                        return Err(RuntimeError {
-                            message: "Expected a class value at stack[top - 1]".to_string(),
-                            span: closure.function.bin.spans[self.ip - 1],
-                        });
-                    }
+                    let class = self.peek(0)?.unwrap_class_or(
+                        "Expected a class value at stack[top - 1]",
+                        closure.function.bin.spans[self.ip - 1],
+                    )?;
+
+                    class.methods.borrow_mut().insert(
+                        method_closure.function.name.string.clone(),
+                        method_closure.clone(),
+                    );
                 }
                 OpCode::Inherit => {
-                    let superclass = self.peek(1)?;
-                    if let Value::Class(superclass) = superclass {
-                        let class = self.peek(0)?;
-                        if let Value::Class(class) = class {
-                            for (method_name, method) in superclass.methods.borrow().iter() {
-                                class
-                                    .methods
-                                    .borrow_mut()
-                                    .insert(method_name.clone(), method.clone());
-                            }
-                        } else {
-                            return Err(RuntimeError {
-                                message: "Cannot inherit into a non-class value".to_string(),
-                                span: closure.function.bin.spans[self.ip - 1],
-                            });
-                        }
-                    } else {
-                        return Err(RuntimeError {
-                            message: "Cannot inherit from a non-class value".to_string(),
-                            span: closure.function.bin.spans[self.ip - 1],
-                        });
+                    let superclass = self.peek(1)?.unwrap_class_or(
+                        "Cannot inherit from a non-class value",
+                        closure.function.bin.spans[self.ip - 1],
+                    )?;
+                    let class = self.peek(0)?.unwrap_class_or(
+                        "Cannot inherit into a non-class value",
+                        closure.function.bin.spans[self.ip - 1],
+                    )?;
+
+                    for (method_name, method) in superclass.methods.borrow().iter() {
+                        class
+                            .methods
+                            .borrow_mut()
+                            .insert(method_name.clone(), method.clone());
                     }
                 }
                 OpCode::GetSuper => {
@@ -467,8 +456,8 @@ impl VM {
     }
 
     fn binary_op(&mut self, op: &OpCode, bin: &Executable) -> Result<(), RuntimeError> {
-        let right = self.peek(0)?.clone();
-        let left = self.peek(1)?.clone();
+        let right = self.pop()?;
+        let left = self.pop()?;
 
         // Check for numeric operands, when apropriate
         match op {
@@ -524,8 +513,6 @@ impl VM {
                 })
             }
         };
-        self.pop()?;
-        self.pop()?;
         self.push(value);
         Ok(())
     }
@@ -659,5 +646,41 @@ impl VM {
             write!(output_stream, "[{:?}] ", value).unwrap();
         }
         writeln!(output_stream).unwrap();
+    }
+}
+
+impl Value {
+    /// Returns an error with the given message and span if the value is not a Number variant
+    fn assert_is_number_or(&self, message: &str, span: Span) -> Result<(), RuntimeError> {
+        if self.is_number() {
+            Ok(())
+        } else {
+            Err(RuntimeError {
+                message: message.to_string(),
+                span,
+            })
+        }
+    }
+    /// Unwraps a `Closure` variant from the `Value` or returns an error with the given message and span
+    fn unwrap_closure_or(&self, message: &str, span: Span) -> Result<Rc<ObjClosure>, RuntimeError> {
+        if let Value::Closure(closure) = self {
+            Ok(closure.clone())
+        } else {
+            Err(RuntimeError {
+                message: message.to_string(),
+                span,
+            })
+        }
+    }
+    /// Unwraps a `Class` variant from the `Value` or returns an error with the given message and span
+    fn unwrap_class_or(&self, message: &str, span: Span) -> Result<Rc<ObjClass>, RuntimeError> {
+        if let Value::Class(class) = self {
+            Ok(class.clone())
+        } else {
+            Err(RuntimeError {
+                message: message.to_string(),
+                span,
+            })
+        }
     }
 }
