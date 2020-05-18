@@ -1,12 +1,6 @@
-use num_derive::FromPrimitive;
-use num_derive::ToPrimitive;
-use num_traits::FromPrimitive;
-use num_traits::ToPrimitive;
-
-#[derive(Debug, FromPrimitive, ToPrimitive, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum OpCode {
-    Constant,
-    LongConstant,
+    Constant(usize),
     Return,
     Add,
     Subtract,
@@ -19,39 +13,24 @@ pub enum OpCode {
     GreaterEqual,
     Not,
     Equal,
+    NotEqual,
     Print,
     Pop,
-    DeclareGlobal,
-    DeclareLongGlobal,
-    GetGlobal,
-    SetGlobal,
-    GetLongGlobal,
-    SetLongGlobal,
-    GetLocal,
-    SetLocal,
-    GetSuper,
-    Jump,
-    JumpIfTrue,
-    JumpIfFalse,
-    Invoke,
-    Closure,
-    GetUpvalue,
-    SetUpvalue,
-    ReadField,
-    SetField,
+    DeclareGlobal(usize),
+    GetGlobal(usize),
+    SetGlobal(usize),
+    GetLocal(usize),
+    SetLocal(usize),
+    GetSuper(usize),
+    Jump(usize),
+    JumpIfTrue(usize),
+    JumpIfFalse(usize),
+    Invoke(usize),
+    Closure(usize),
+    GetUpvalue(usize),
+    SetUpvalue(usize),
+    ReadField(usize),
+    SetField(usize),
     Method,
     Inherit,
-}
-
-impl From<u8> for OpCode {
-    fn from(byte: u8) -> Self {
-        FromPrimitive::from_u8(byte)
-            .unwrap_or_else(|| panic!("failed to convert {} into OpCode", byte))
-    }
-}
-
-impl Into<u8> for OpCode {
-    fn into(self) -> u8 {
-        ToPrimitive::to_u8(&self).unwrap_or_else(|| panic!("failed to convert {:?} into u8", self))
-    }
 }

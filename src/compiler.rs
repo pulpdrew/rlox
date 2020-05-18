@@ -80,8 +80,12 @@ impl<'a, W: Write> Compiler<'a, W> {
             } => {
                 self.compile_node(bin, expression)?;
                 match operator.kind {
-                    Kind::Minus => bin.push_opcode(OpCode::Negate, node_span),
-                    Kind::Bang => bin.push_opcode(OpCode::Not, node_span),
+                    Kind::Minus => {
+                        bin.push_opcode(OpCode::Negate, node_span);
+                    }
+                    Kind::Bang => {
+                        bin.push_opcode(OpCode::Not, node_span);
+                    }
                     _ => {
                         return Err(CompilerError {
                             message: format!("Invalid unary operator {:?}", operator),
@@ -97,27 +101,26 @@ impl<'a, W: Write> Compiler<'a, W> {
             } => {
                 self.compile_node(bin, left)?;
                 self.compile_node(bin, right)?;
-                match operator.kind {
-                    Kind::Plus => bin.push_opcode(OpCode::Add, node_span),
-                    Kind::Minus => bin.push_opcode(OpCode::Subtract, node_span),
-                    Kind::Star => bin.push_opcode(OpCode::Multiply, node_span),
-                    Kind::Slash => bin.push_opcode(OpCode::Divide, node_span),
-                    Kind::Less => bin.push_opcode(OpCode::Less, node_span),
-                    Kind::LessEqual => bin.push_opcode(OpCode::LessEqual, node_span),
-                    Kind::Greater => bin.push_opcode(OpCode::Greater, node_span),
-                    Kind::GreaterEqual => bin.push_opcode(OpCode::GreaterEqual, node_span),
-                    Kind::EqualEqual => bin.push_opcode(OpCode::Equal, node_span),
-                    Kind::BangEqual => {
-                        bin.push_opcode(OpCode::Equal, node_span);
-                        bin.push_opcode(OpCode::Not, node_span);
-                    }
+
+                let opcode = match operator.kind {
+                    Kind::Plus => OpCode::Add,
+                    Kind::Minus => OpCode::Subtract,
+                    Kind::Star => OpCode::Multiply,
+                    Kind::Slash => OpCode::Divide,
+                    Kind::Less => OpCode::Less,
+                    Kind::LessEqual => OpCode::LessEqual,
+                    Kind::Greater => OpCode::Greater,
+                    Kind::GreaterEqual => OpCode::GreaterEqual,
+                    Kind::EqualEqual => OpCode::Equal,
+                    Kind::BangEqual => OpCode::NotEqual,
                     _ => {
                         return Err(CompilerError {
                             message: format!("Invalid binary operator {:?}", operator),
                             span: operator.span,
-                        })
+                        });
                     }
-                }
+                };
+                bin.push_opcode(opcode, node_span);
             }
             AstNode::Assignment { lvalue, rvalue, .. } => match &lvalue.node {
                 Some(AstNode::Variable { name }) => {
@@ -127,11 +130,8 @@ impl<'a, W: Write> Compiler<'a, W> {
                 Some(AstNode::FieldAccess { target, name }) => {
                     self.compile_node(bin, target)?;
                     self.compile_node(bin, rvalue)?;
-                    bin.push_constant_inst(
-                        OpCode::SetField,
-                        Value::from(name.to_string()),
-                        node_span,
-                    );
+                    let index = bin.add_constant(Value::from(name.to_string()));
+                    bin.push_opcode(OpCode::SetField(index), node_span);
                 }
                 _ => {
                     return Err(CompilerError {
@@ -150,26 +150,30 @@ impl<'a, W: Write> Compiler<'a, W> {
                 self.get_variable(name, bin, &node_span);
             }
             AstNode::Constant { value } => {
-                bin.push_constant_inst(OpCode::Constant, value.clone(), node_span);
+                let index = bin.add_constant(value.clone());
+                bin.push_opcode(OpCode::Constant(index), node_span);
             }
             AstNode::Invokation { target, arguments } => {
                 self.compile_node(bin, target)?;
-                bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span); // To be replaced by "this"
+
+                // Empty stack slot to be replaced by `this` when the target is a method
+                let index = bin.add_constant(Value::Nil);
+                bin.push_opcode(OpCode::Constant(index), node_span);
+
                 for arg in arguments {
                     self.compile_node(bin, arg)?;
                 }
-                bin.push_opcode(OpCode::Invoke, node_span);
-                bin.push_u8(arguments.len() as u8, node_span);
+                bin.push_opcode(OpCode::Invoke(arguments.len()), node_span);
             }
             AstNode::FieldAccess { target, name } => {
                 self.compile_node(bin, target)?;
-                bin.push_constant_inst(OpCode::ReadField, Value::from(name.to_string()), node_span);
+                let index = bin.add_constant(Value::from(name.to_string()));
+                bin.push_opcode(OpCode::ReadField(index), node_span);
             }
             AstNode::SuperAccess { name } => {
                 // Put the current instance on the stack
                 if let Some((index, _)) = self.current_frame().resolve_local("this") {
-                    bin.push_opcode(OpCode::GetLocal, node_span);
-                    bin.push_u8(index as u8, node_span);
+                    bin.push_opcode(OpCode::GetLocal(index), node_span);
                 } else {
                     return Err(CompilerError {
                         message: "'super' may not be used outside methods".to_string(),
@@ -179,8 +183,7 @@ impl<'a, W: Write> Compiler<'a, W> {
 
                 // Put the superclass on the stack
                 if let Some(index) = self.resolve_upvalue(0, "super") {
-                    bin.push_opcode(OpCode::GetUpvalue, node_span);
-                    bin.push_u8(index as u8, node_span);
+                    bin.push_opcode(OpCode::GetUpvalue(index), node_span);
                 } else {
                     return Err(CompilerError {
                         message: "No superclass available here".to_string(),
@@ -188,7 +191,8 @@ impl<'a, W: Write> Compiler<'a, W> {
                     });
                 }
 
-                bin.push_constant_inst(OpCode::GetSuper, Value::from(name.to_string()), node_span);
+                let index = bin.add_constant(Value::from(name.to_string()));
+                bin.push_opcode(OpCode::GetSuper(index), node_span);
             }
             AstNode::ClassDeclaration {
                 name,
@@ -200,7 +204,8 @@ impl<'a, W: Write> Compiler<'a, W> {
                     name: Box::new(ObjString::from(name.clone())),
                     methods: RefCell::new(HashMap::new()),
                 });
-                bin.push_constant_inst(OpCode::Constant, class, node_span);
+                let index = bin.add_constant(class);
+                bin.push_opcode(OpCode::Constant(index), node_span);
                 self.declare_variable(name, bin, &node_span)?;
 
                 // Leave the superclass on the stack to be captured by any super calls
@@ -246,7 +251,8 @@ impl<'a, W: Write> Compiler<'a, W> {
                 if let Some(init_expression) = initializer {
                     self.compile_node(bin, init_expression)?;
                 } else {
-                    bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
+                    let index = bin.add_constant(Value::Nil);
+                    bin.push_opcode(OpCode::Constant(index), node_span);
                 }
                 self.declare_variable(name, bin, &node_span)?;
             }
@@ -264,10 +270,11 @@ impl<'a, W: Write> Compiler<'a, W> {
                         self.compile_node(bin, expression)?;
                     }
                     None => {
-                        bin.push_constant_inst(OpCode::Constant, Value::Nil, node_span);
+                        let index = bin.add_constant(Value::Nil);
+                        bin.push_opcode(OpCode::Constant(index), node_span);
                     }
                 }
-                bin.push_opcode(OpCode::Return, node_span)
+                bin.push_opcode(OpCode::Return, node_span);
             }
             AstNode::Block { declarations } => {
                 self.current_frame_mut().begin_scope();
@@ -283,18 +290,14 @@ impl<'a, W: Write> Compiler<'a, W> {
                 ..
             } => {
                 self.compile_node(bin, condition)?;
-                bin.push_opcode(OpCode::JumpIfFalse, node_span);
-                let first_jump = bin.len();
-                bin.push_u16(0 as u16, node_span);
+                let first_jump = bin.push_opcode(OpCode::JumpIfFalse(0), node_span);
                 bin.push_opcode(OpCode::Pop, node_span);
                 self.compile_node(bin, if_block)?;
 
                 bin.assert_not_too_long(&node_span)?;
 
-                bin.push_opcode(OpCode::Jump, node_span);
-                let second_jump = bin.len();
-                bin.push_u16(0 as u16, node_span);
-                bin.replace_u16(first_jump, bin.len() as u16);
+                let second_jump = bin.push_opcode(OpCode::Jump(0), node_span);
+                bin[first_jump] = OpCode::JumpIfFalse(bin.len());
                 bin.push_opcode(OpCode::Pop, node_span);
 
                 if let Some(else_block) = else_block {
@@ -302,21 +305,18 @@ impl<'a, W: Write> Compiler<'a, W> {
                 }
 
                 bin.assert_not_too_long(&node_span)?;
-                bin.replace_u16(second_jump, bin.len() as u16);
+                bin[second_jump] = OpCode::Jump(bin.len());
             }
             AstNode::While { condition, block } => {
-                let condition_index = bin.len() as u16;
+                let condition_index = bin.len();
                 self.compile_node(bin, condition)?;
-                bin.push_opcode(OpCode::JumpIfFalse, node_span);
-                let jump_to_end_index = bin.len();
-                bin.push_u16(0, node_span);
+                let jump_to_end_index = bin.push_opcode(OpCode::JumpIfFalse(0), node_span);
                 bin.push_opcode(OpCode::Pop, node_span);
                 self.compile_node(bin, block)?;
-                bin.push_opcode(OpCode::Jump, node_span);
-                bin.push_u16(condition_index, node_span);
+                bin.push_opcode(OpCode::Jump(condition_index), node_span);
 
                 bin.assert_not_too_long(&node_span)?;
-                bin.replace_u16(jump_to_end_index, bin.len() as u16);
+                bin[jump_to_end_index] = OpCode::JumpIfFalse(bin.len());
                 bin.push_opcode(OpCode::Pop, node_span);
             }
             AstNode::For {
@@ -330,12 +330,10 @@ impl<'a, W: Write> Compiler<'a, W> {
                     self.compile_node(bin, initializer)?;
                 }
 
-                let condition_index = bin.len() as u16;
+                let condition_index = bin.len();
                 let jump_to_end_index = if let Some(condition) = condition {
                     self.compile_node(bin, condition)?;
-                    bin.push_opcode(OpCode::JumpIfFalse, node_span);
-                    let jump_to_end_index = bin.len();
-                    bin.push_u16(0, node_span);
+                    let jump_to_end_index = bin.push_opcode(OpCode::JumpIfFalse(0), node_span);
                     bin.push_opcode(OpCode::Pop, condition.span);
                     jump_to_end_index
                 } else {
@@ -347,12 +345,11 @@ impl<'a, W: Write> Compiler<'a, W> {
                     self.compile_node(bin, update)?;
                     bin.push_opcode(OpCode::Pop, update.span);
                 }
-                bin.push_opcode(OpCode::Jump, node_span);
-                bin.push_u16(condition_index, node_span);
+                bin.push_opcode(OpCode::Jump(condition_index), node_span);
 
                 if condition.is_some() {
                     bin.assert_not_too_long(&node_span)?;
-                    bin.replace_u16(jump_to_end_index, bin.len() as u16);
+                    bin[jump_to_end_index] = OpCode::JumpIfFalse(bin.len())
                 }
                 bin.push_opcode(OpCode::Pop, node_span);
                 self.current_frame_mut().end_scope(bin, block.span);
@@ -374,8 +371,10 @@ impl<'a, W: Write> Compiler<'a, W> {
         let name_value = Value::from(name);
 
         if self.current_frame().is_global() {
-            bin.push_constant_inst(OpCode::DeclareGlobal, name_value.clone(), *span);
-            bin.push_constant_inst(OpCode::SetGlobal, name_value, *span);
+            let index = bin.add_constant(name_value.clone());
+            bin.push_opcode(OpCode::DeclareGlobal(index), *span);
+            let index = bin.add_constant(name_value);
+            bin.push_opcode(OpCode::SetGlobal(index), *span);
             bin.push_opcode(OpCode::Pop, *span);
         } else {
             if let Some((_, distance)) = self.current_frame().resolve_local(name) {
@@ -396,14 +395,13 @@ impl<'a, W: Write> Compiler<'a, W> {
     /// Does not consume the value at the top of the stack.
     fn set_variable(&mut self, name: &str, bin: &mut Executable, span: &Span) {
         if let Some((index, _)) = self.current_frame().resolve_local(name) {
-            bin.push_opcode(OpCode::SetLocal, *span);
-            bin.push_u8(index as u8, *span);
+            bin.push_opcode(OpCode::SetLocal(index), *span);
         } else if let Some(index) = self.resolve_upvalue(0, name) {
-            bin.push_opcode(OpCode::SetUpvalue, *span);
-            bin.push_u8(index as u8, *span);
+            bin.push_opcode(OpCode::SetUpvalue(index), *span);
         } else {
             let name_value = Value::from(name);
-            bin.push_constant_inst(OpCode::SetGlobal, name_value, *span);
+            let index = bin.add_constant(name_value);
+            bin.push_opcode(OpCode::SetGlobal(index), *span);
         }
     }
 
@@ -412,14 +410,13 @@ impl<'a, W: Write> Compiler<'a, W> {
     /// global variables.
     fn get_variable(&mut self, name: &str, bin: &mut Executable, span: &Span) {
         if let Some((index, _)) = self.current_frame().resolve_local(name) {
-            bin.push_opcode(OpCode::GetLocal, *span);
-            bin.push_u8(index as u8, *span);
+            bin.push_opcode(OpCode::GetLocal(index), *span);
         } else if let Some(index) = self.resolve_upvalue(0, name) {
-            bin.push_opcode(OpCode::GetUpvalue, *span);
-            bin.push_u8(index as u8, *span);
+            bin.push_opcode(OpCode::GetUpvalue(index), *span);
         } else {
             let name_value = Value::from(name);
-            bin.push_constant_inst(OpCode::GetGlobal, name_value, *span);
+            let index = bin.add_constant(name_value);
+            bin.push_opcode(OpCode::GetGlobal(index), *span);
         }
     }
 
@@ -521,7 +518,8 @@ impl<'a, W: Write> Compiler<'a, W> {
             self.compile_node(&mut function_binary, body)?;
 
             // Always add return nil; to the end in case there is no explicit return statement
-            function_binary.push_constant_inst(OpCode::Constant, Value::Nil, function_span);
+            let index = function_binary.add_constant(Value::Nil);
+            function_binary.push_opcode(OpCode::Constant(index), function_span);
             function_binary.push_opcode(OpCode::Return, body.span);
 
             // Disassemble the function body if enabled
@@ -535,13 +533,14 @@ impl<'a, W: Write> Compiler<'a, W> {
             self.frames.pop_back();
 
             // Put the function object on the top of the stack and create a closure
-            let value = Value::from(ObjFunction {
+            let function_value = Value::from(ObjFunction {
                 name: Box::new(ObjString::from(name.clone())),
                 arity: parameters.len() as u8,
                 bin: function_binary,
                 upvalues: self.current_frame_mut().upvalues.drain(0..).collect(),
             });
-            bin.push_constant_inst(OpCode::Closure, value, function_span);
+            let index = bin.add_constant(function_value);
+            bin.push_opcode(OpCode::Closure(index), function_span);
 
             Ok(())
         } else {
