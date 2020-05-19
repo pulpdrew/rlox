@@ -8,22 +8,16 @@ use crate::value::Value;
 pub struct Parser {
     scanner: Scanner,
     current: Token,
-    next: Token,
 }
 
 impl Parser {
     pub fn new(source: &str) -> Self {
         let mut scanner = Scanner::new(&source);
         let current = scanner.next().unwrap();
-        let next = scanner.next().unwrap();
-        Parser {
-            scanner,
-            current,
-            next,
-        }
+        Parser { scanner, current }
     }
 
-    /// Parse the source into a program - a list of declaratation `AstNode`s
+    /// Parse the source into a program - a list of declaration `AstNode`s
     pub fn parse_program(&mut self) -> Result<Vec<SpannedAstNode>, Vec<ParsingError>> {
         let mut program = vec![];
         let mut errors = vec![];
@@ -51,21 +45,9 @@ impl Parser {
             Kind::Class => self.class_declaration(),
             Kind::Fun => {
                 self.advance();
-                self.function()
+                self.function_declaration()
             }
             _ => self.statement(),
-        }
-    }
-
-    fn id_token(&mut self) -> Result<(String, Span), ParsingError> {
-        let Token { kind, span } = self.advance();
-        if let Kind::IdentifierLiteral(id) = kind {
-            Ok((id, span))
-        } else {
-            Err(ParsingError {
-                message: "Expected identifier.".to_string(),
-                span,
-            })
         }
     }
 
@@ -81,7 +63,7 @@ impl Parser {
             None
         };
 
-        let semi = self.eat(Kind::Semicolon, "Expected ';' after declaration.")?;
+        let semi = self.eat(Kind::Semicolon)?;
         let span = Span::merge(vec![&keyword.span, &semi.span]);
         Ok(SpannedAstNode::new(
             AstNode::VarDeclaration { name, initializer },
@@ -90,15 +72,14 @@ impl Parser {
     }
 
     fn class_declaration(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        let keyword = self.eat(Kind::Class, "Expected 'class' keyword")?;
+        let keyword = self.eat(Kind::Class)?;
         let (name, _) = self.id_token()?;
 
         let superclass = if let Kind::Less = self.current.kind {
             self.advance();
             let (superclass_name, superclass_span) = self.id_token()?;
             if superclass_name == name {
-                return Err(ParsingError {
-                    message: format!("Class {} cannot inherit from itself", superclass_name),
+                return Err(ParsingError::SelfInheritance {
                     span: superclass_span,
                 });
             }
@@ -107,39 +88,14 @@ impl Parser {
             None
         };
 
-        self.eat(Kind::LeftBrace, "Expected '{' after class declaration")?;
-
+        // Parse the class body (methods)
+        self.eat(Kind::LeftBrace)?;
         let mut methods = vec![];
         while self.current.kind != Kind::RightBrace && self.current.kind != Kind::Eof {
-            let (method_name, method_name_span) = self.id_token()?;
-            self.eat(Kind::LeftParen, "Expected '(' after method name")?;
-
-            let parameters = match self.current.kind {
-                Kind::RightParen => vec![],
-                Kind::IdentifierLiteral(_) => self.parameter_list()?,
-                _ => {
-                    return Err(ParsingError {
-                        message: "Expected parameter list or ')'.".to_string(),
-                        span: self.current.span,
-                    })
-                }
-            };
-            self.eat(Kind::RightParen, "Expected ')' after formal parameter list")?;
-            let body = self.block_statement()?;
-
-            let span = Span::merge(vec![&method_name_span, &body.span]);
-
-            methods.push(SpannedAstNode::new(
-                AstNode::FunDeclaration {
-                    name: method_name,
-                    parameters,
-                    body: Box::new(body),
-                },
-                span,
-            ));
+            methods.push(self.function_declaration()?);
         }
+        let end_brace = self.eat(Kind::RightBrace)?;
 
-        let end_brace = self.eat(Kind::RightBrace, "Expected '}' after class body")?;
         let span = Span::merge(vec![&keyword.span, &end_brace.span]);
         Ok(SpannedAstNode::new(
             AstNode::ClassDeclaration {
@@ -151,41 +107,22 @@ impl Parser {
         ))
     }
 
-    fn parameter_list(&mut self) -> Result<Vec<Token>, ParsingError> {
-        let mut parameters = vec![];
-        parameters.push(self.advance());
-        while self.current.kind == Kind::Comma {
-            self.advance();
-            let param_name = self.advance();
-            if let Kind::IdentifierLiteral(_) = param_name.kind {
-                parameters.push(param_name);
-            } else {
-                return Err(ParsingError {
-                    message: "Expected parameter name.".to_string(),
-                    span: param_name.span,
-                });
-            }
-        }
-
-        Ok(parameters)
-    }
-
-    fn function(&mut self) -> Result<SpannedAstNode, ParsingError> {
+    fn function_declaration(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let (name, name_span) = self.id_token()?;
-        self.eat(Kind::LeftParen, "Expected '(' after function name")?;
+        self.eat(Kind::LeftParen)?;
 
         let parameters = match self.current.kind {
             Kind::RightParen => vec![],
             Kind::IdentifierLiteral(_) => self.parameter_list()?,
             _ => {
-                return Err(ParsingError {
-                    message: "Expected parameter list or ')'.".to_string(),
-                    span: self.current.span,
+                return Err(ParsingError::UnexpectedToken {
+                    expected: "parameter list or ')'.".to_string(),
+                    actual: self.advance(),
                 })
             }
         };
 
-        self.eat(Kind::RightParen, "Expected ')' after formal parameter list")?;
+        self.eat(Kind::RightParen)?;
         let body = self.block_statement()?;
         let span = Span::merge(vec![&name_span, &body.span]);
 
@@ -213,7 +150,7 @@ impl Parser {
 
     fn expression_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let expression = self.expression()?;
-        let semi = self.eat(Kind::Semicolon, "Expected ';' after expression")?;
+        let semi = self.eat(Kind::Semicolon)?;
         let new_span = Span::merge(vec![&expression.span, &semi.span]);
         Ok(SpannedAstNode::new(
             AstNode::ExpressionStmt {
@@ -235,13 +172,13 @@ impl Parser {
             }
         };
 
-        self.eat(Kind::Semicolon, "Expected ';' after return statement.")?;
+        self.eat(Kind::Semicolon)?;
         Ok(SpannedAstNode::new(AstNode::Return { value }, span))
     }
 
     fn for_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.advance();
-        self.eat(Kind::LeftParen, "Expected '(' after 'for.'")?;
+        self.eat(Kind::LeftParen)?;
 
         let initializer = match self.current.kind {
             Kind::Var => Some(Box::new(self.var_declaration()?)),
@@ -257,14 +194,14 @@ impl Parser {
             _ => Some(Box::new(self.expression()?)),
         };
 
-        self.eat(Kind::Semicolon, "Expected ';' after for condition.")?;
+        self.eat(Kind::Semicolon)?;
 
         let update = match self.current.kind {
             Kind::RightParen => None,
             _ => Some(Box::new(self.expression()?)),
         };
 
-        self.eat(Kind::RightParen, "Expected ')' before for block.")?;
+        self.eat(Kind::RightParen)?;
 
         let block = self.statement()?;
         let span = Span::merge(vec![&keyword.span, &block.span]);
@@ -282,10 +219,10 @@ impl Parser {
 
     fn while_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.advance();
-        self.eat(Kind::LeftParen, "Expected '(' after 'while.'")?;
+        self.eat(Kind::LeftParen)?;
 
         let condition = self.expression()?;
-        self.eat(Kind::RightParen, "Expected ')' after while condition.")?;
+        self.eat(Kind::RightParen)?;
 
         let block = self.statement()?;
         let span = Span::merge(vec![&keyword.span, &block.span]);
@@ -301,10 +238,10 @@ impl Parser {
 
     fn if_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.advance();
-        self.eat(Kind::LeftParen, "Expected '(' after 'if.'")?;
+        self.eat(Kind::LeftParen)?;
         let condition = self.expression()?;
 
-        self.eat(Kind::RightParen, "Expected ')' after if condition.")?;
+        self.eat(Kind::RightParen)?;
 
         let if_block = self.statement()?;
         let mut span = Span::merge(vec![&keyword.span, &if_block.span]);
@@ -339,7 +276,7 @@ impl Parser {
             }
         }
 
-        let rbrace = self.eat(Kind::RightBrace, "Expected '}' after block statement")?;
+        let rbrace = self.eat(Kind::RightBrace)?;
         let new_span = Span::merge(vec![&lbrace.span, &rbrace.span]);
         Ok(SpannedAstNode::new(
             AstNode::Block { declarations },
@@ -350,7 +287,7 @@ impl Parser {
     fn print_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.advance();
         let expression = self.expression()?;
-        let semi = self.eat(Kind::Semicolon, "Expected ';' after print statement")?;
+        let semi = self.eat(Kind::Semicolon)?;
         let new_span = Span::merge(vec![&keyword.span, &expression.span, &semi.span]);
         Ok(SpannedAstNode::new(
             AstNode::Print {
@@ -365,7 +302,7 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        let node = self.logic_or()?;
+        let node = self.disjunction()?;
 
         if self.current.kind == Kind::Equal {
             self.advance();
@@ -384,11 +321,13 @@ impl Parser {
         }
     }
 
-    fn logic_or(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        self.logic_and()
+    fn disjunction(&mut self) -> Result<SpannedAstNode, ParsingError> {
+        // TODO: Implement
+        self.conjunction()
     }
 
-    fn logic_and(&mut self) -> Result<SpannedAstNode, ParsingError> {
+    fn conjunction(&mut self) -> Result<SpannedAstNode, ParsingError> {
+        // TODO: Implement
         self.equality()
     }
 
@@ -517,7 +456,7 @@ impl Parser {
                         _ => self.argument_list()?,
                     };
 
-                    let rparen = self.eat(Kind::RightParen, "Expected ')' after argument list.")?;
+                    let rparen = self.eat(Kind::RightParen)?;
 
                     let new_span = Span::merge(vec![&node.span, &rparen.span]);
 
@@ -552,7 +491,7 @@ impl Parser {
             Kind::LeftParen => {
                 let lparen = self.advance();
                 let expression = self.expression()?;
-                let rparen = self.eat(Kind::RightParen, "Expected ')' after expression.")?;
+                let rparen = self.eat(Kind::RightParen)?;
                 let new_span = Span::merge(vec![&lparen.span, &expression.span, &rparen.span]);
                 Ok(SpannedAstNode::respan(expression, new_span))
             }
@@ -560,8 +499,8 @@ impl Parser {
                 AstNode::Variable { name },
                 self.advance().span,
             )),
-            Kind::NumberLiteral(_) => self.number(),
-            Kind::StringLiteral(_) => self.string(),
+            Kind::NumberLiteral(_) => self.number_literal(),
+            Kind::StringLiteral(_) => self.string_literal(),
             Kind::True => Ok(SpannedAstNode::new(
                 AstNode::Constant {
                     value: Value::Bool(true),
@@ -594,75 +533,109 @@ impl Parser {
             }
             Kind::Super => {
                 let keyword_span = self.advance().span;
-                self.eat(Kind::Dot, "Expected '.' after 'super'.")?;
+                self.eat(Kind::Dot)?;
                 let (name, name_span) = self.id_token()?;
                 Ok(SpannedAstNode::new(
                     AstNode::SuperAccess { name },
                     Span::merge(vec![&keyword_span, &name_span]),
                 ))
             }
-            _ => Err(ParsingError {
-                span: self.current.span,
-                message: "Expected primary expression.".to_string(),
+            _ => Err(ParsingError::UnexpectedToken {
+                expected: "primary expression".to_string(),
+                actual: self.advance(),
             }),
         }
     }
 
-    fn number(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        let Token { kind, span } = self.advance();
+    fn number_literal(&mut self) -> Result<SpannedAstNode, ParsingError> {
+        let token = self.advance();
 
-        if let Kind::NumberLiteral(n) = kind {
+        if let Kind::NumberLiteral(n) = token.kind {
             Ok(SpannedAstNode::new(
                 AstNode::Constant {
                     value: Value::from(n),
                 },
-                span,
+                token.span,
             ))
         } else {
-            Err(ParsingError {
-                span,
-                message: "Expected a NumberLiteral.".to_string(),
+            Err(ParsingError::UnexpectedToken {
+                expected: "number".to_string(),
+                actual: token,
             })
         }
     }
 
-    fn string(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        let Token { kind, span } = self.advance();
-        if let Kind::StringLiteral(s) = kind {
+    fn string_literal(&mut self) -> Result<SpannedAstNode, ParsingError> {
+        let token = self.advance();
+        if let Kind::StringLiteral(s) = token.kind {
             Ok(SpannedAstNode::new(
                 AstNode::Constant {
                     value: Value::from(s),
                 },
-                span,
+                token.span,
             ))
         } else {
-            Err(ParsingError {
-                span,
-                message: "Expected a StringLiteral.".to_string(),
+            Err(ParsingError::UnexpectedToken {
+                expected: "string".to_string(),
+                actual: token,
             })
         }
     }
 
-    fn advance(&mut self) -> Token {
-        let previous = self.current.clone();
-        self.current = self.next.clone();
-        self.next = self.scanner.next().unwrap();
-        previous
+    /// Parse a parameter list and return a vector of the `Token`s that represent the paremeter names
+    fn parameter_list(&mut self) -> Result<Vec<Token>, ParsingError> {
+        let mut parameters = vec![];
+        parameters.push(self.advance());
+        while self.current.kind == Kind::Comma {
+            self.advance();
+            let param_name = self.advance();
+            if let Kind::IdentifierLiteral(_) = param_name.kind {
+                parameters.push(param_name);
+            } else {
+                return Err(ParsingError::UnexpectedToken {
+                    expected: "identifier".to_string(),
+                    actual: param_name,
+                });
+            }
+        }
+
+        Ok(parameters)
     }
-    fn eat(&mut self, kind: Kind, message: &str) -> Result<Token, ParsingError> {
+
+    /// Parse an identifier literal and return it, destructured
+    fn id_token(&mut self) -> Result<(String, Span), ParsingError> {
+        let token = self.advance();
+        if let Kind::IdentifierLiteral(id) = token.kind {
+            Ok((id, token.span))
+        } else {
+            Err(ParsingError::UnexpectedToken {
+                expected: "identifier".to_string(),
+                actual: token,
+            })
+        }
+    }
+
+    /// Return the current `Token` and set `self.current` the the next `Token`
+    fn advance(&mut self) -> Token {
+        let mut temp = self.scanner.next().unwrap();
+        std::mem::swap(&mut temp, &mut self.current);
+        temp
+    }
+
+    /// Advance if the current `Token` matches `kind`. Otherwise, return an error
+    fn eat(&mut self, kind: Kind) -> Result<Token, ParsingError> {
         if self.current.kind == kind {
             Ok(self.advance())
         } else {
-            Err(ParsingError {
-                message: message.to_string(),
-                span: self.current.span,
+            Err(ParsingError::UnexpectedToken {
+                expected: format!("'{}'", kind),
+                actual: self.advance(),
             })
         }
     }
 
     /// Consume tokens until current is '{', '}', or the token after a ';'
     fn synchronize(&mut self) {
-        self.advance();
         loop {
             match self.current.kind {
                 Kind::Semicolon | Kind::Eof => {

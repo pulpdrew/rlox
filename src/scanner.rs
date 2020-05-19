@@ -45,7 +45,7 @@ impl Iterator for Scanner {
                 '0'..='9' => self.number_literal(),
                 '"' => self.string_literal(),
 
-                _ => self.make_error_token(1),
+                _ => self.make_error_token(1, "unrecognized character".to_string()),
             },
             None => self.make_token(Kind::Eof, 0),
         })
@@ -140,7 +140,10 @@ impl Scanner {
         }
 
         if length >= self.characters.len() {
-            self.make_error_token(self.characters.len() - 1)
+            self.make_error_token(
+                self.characters.len() - 1,
+                "unclosed string literal".to_string(),
+            )
         } else {
             Token {
                 span: self.make_span(length + 1),
@@ -160,10 +163,13 @@ impl Scanner {
     }
 
     /// Makes an error token out the next `length` characters
-    fn make_error_token(&mut self, length: usize) -> Token {
+    fn make_error_token(&mut self, length: usize, message: String) -> Token {
         Token {
             span: self.make_span(length),
-            kind: Kind::Error(self.read_front(length)),
+            kind: Kind::Error {
+                message,
+                source: self.read_front(length),
+            },
         }
     }
 

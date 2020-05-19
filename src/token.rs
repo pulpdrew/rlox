@@ -1,4 +1,5 @@
 use std::cmp;
+use std::fmt;
 
 /// An indivisible bit of source code tagged with a `Kind` and a `Span`
 #[derive(Debug, Clone)]
@@ -53,7 +54,54 @@ pub enum Kind {
     This,
 
     Eof,
-    Error(String),
+    Error { message: String, source: String },
+}
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Kind::LeftBrace => write!(f, "{{"),
+            Kind::RightBrace => write!(f, "}}"),
+            Kind::LeftParen => write!(f, "("),
+            Kind::RightParen => write!(f, ")"),
+            Kind::Comma => write!(f, ","),
+            Kind::Dot => write!(f, "."),
+            Kind::Minus => write!(f, "-"),
+            Kind::Plus => write!(f, "+"),
+            Kind::Slash => write!(f, "/"),
+            Kind::Star => write!(f, "*"),
+            Kind::Semicolon => write!(f, ";"),
+            Kind::Bang => write!(f, "!"),
+            Kind::BangEqual => write!(f, "!="),
+            Kind::Equal => write!(f, "="),
+            Kind::EqualEqual => write!(f, "=="),
+            Kind::Greater => write!(f, ">"),
+            Kind::GreaterEqual => write!(f, ">="),
+            Kind::Less => write!(f, "<"),
+            Kind::LessEqual => write!(f, "<="),
+            Kind::IdentifierLiteral(id) => write!(f, "{}", id),
+            Kind::StringLiteral(s) => write!(f, "{}", s),
+            Kind::NumberLiteral(n) => write!(f, "{}", n),
+            Kind::And => write!(f, "and"),
+            Kind::Or => write!(f, "or"),
+            Kind::Class => write!(f, "class"),
+            Kind::Fun => write!(f, "fun"),
+            Kind::Var => write!(f, "var"),
+            Kind::If => write!(f, "if"),
+            Kind::Else => write!(f, "else"),
+            Kind::While => write!(f, "while"),
+            Kind::For => write!(f, "for"),
+            Kind::True => write!(f, "true"),
+            Kind::False => write!(f, "false"),
+            Kind::Nil => write!(f, "nil"),
+            Kind::Print => write!(f, "print"),
+            Kind::Return => write!(f, "return"),
+            Kind::Super => write!(f, "super"),
+            Kind::This => write!(f, "this"),
+            Kind::Eof => write!(f, "end of file"),
+            Kind::Error { message, .. } => write!(f, "{}", message),
+        }
+    }
 }
 
 /// A region of source code with a start and an end
