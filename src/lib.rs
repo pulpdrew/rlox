@@ -1,6 +1,3 @@
-extern crate num_derive;
-extern crate num_traits;
-
 pub mod ast;
 pub mod compiler;
 pub mod error;
