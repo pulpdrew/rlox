@@ -118,6 +118,7 @@ impl Executable {
             OpCode::SetField(arg) => self.constant_instruction("SetField", arg, out),
             OpCode::Method => self.simple_instruction("Method", out),
             OpCode::Inherit => self.simple_instruction("Inherit", out),
+            OpCode::Bool => self.simple_instruction("Bool", out),
         }
     }
 

@@ -302,7 +302,7 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        let node = self.disjunction()?;
+        let node = self.or()?;
 
         if self.current.kind == Kind::Equal {
             self.advance();
@@ -321,14 +321,42 @@ impl Parser {
         }
     }
 
-    fn disjunction(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        // TODO: Implement
-        self.conjunction()
+    fn or(&mut self) -> Result<SpannedAstNode, ParsingError> {
+        let mut node = self.and()?;
+        while self.current.kind == Kind::Or {
+            self.advance();
+            let right = self.and()?;
+            let new_span = Span::merge(vec![&node.span, &right.span]);
+
+            node = SpannedAstNode::new(
+                AstNode::Or {
+                    left: Box::new(node),
+                    right: Box::new(right),
+                },
+                new_span,
+            );
+        }
+
+        Ok(node)
     }
 
-    fn conjunction(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        // TODO: Implement
-        self.equality()
+    fn and(&mut self) -> Result<SpannedAstNode, ParsingError> {
+        let mut node = self.equality()?;
+        while self.current.kind == Kind::And {
+            self.advance();
+            let right = self.equality()?;
+            let new_span = Span::merge(vec![&node.span, &right.span]);
+
+            node = SpannedAstNode::new(
+                AstNode::And {
+                    left: Box::new(node),
+                    right: Box::new(right),
+                },
+                new_span,
+            );
+        }
+
+        Ok(node)
     }
 
     fn equality(&mut self) -> Result<SpannedAstNode, ParsingError> {
@@ -487,16 +515,18 @@ impl Parser {
     }
 
     fn primary(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        match self.current.clone().kind {
+        match &self.current.kind {
             Kind::LeftParen => {
                 let lparen = self.advance();
                 let expression = self.expression()?;
                 let rparen = self.eat(Kind::RightParen)?;
-                let new_span = Span::merge(vec![&lparen.span, &expression.span, &rparen.span]);
+                let new_span = Span::merge(vec![&lparen.span, &rparen.span]);
                 Ok(SpannedAstNode::respan(expression, new_span))
             }
             Kind::IdentifierLiteral(name) => Ok(SpannedAstNode::new(
-                AstNode::Variable { name },
+                AstNode::Variable {
+                    name: name.to_string(),
+                },
                 self.advance().span,
             )),
             Kind::NumberLiteral(_) => self.number_literal(),
@@ -521,16 +551,12 @@ impl Parser {
                     span,
                 ))
             }
-            Kind::This => {
-                let literal = self.advance();
-                let span = literal.span;
-                Ok(SpannedAstNode::new(
-                    AstNode::Variable {
-                        name: "this".to_string(),
-                    },
-                    span,
-                ))
-            }
+            Kind::This => Ok(SpannedAstNode::new(
+                AstNode::Variable {
+                    name: "this".to_string(),
+                },
+                self.advance().span,
+            )),
             Kind::Super => {
                 let keyword_span = self.advance().span;
                 self.eat(Kind::Dot)?;

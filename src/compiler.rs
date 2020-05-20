@@ -88,7 +88,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                     }
                     _ => {
                         return Err(CompilerError {
-                            message: format!("Invalid unary operator {:?}", operator),
+                            message: format!("Invalid unary operator '{}'", operator.kind),
                             span: operator.span,
                         })
                     }
@@ -115,7 +115,7 @@ impl<'a, W: Write> Compiler<'a, W> {
                     Kind::BangEqual => OpCode::NotEqual,
                     _ => {
                         return Err(CompilerError {
-                            message: format!("Invalid binary operator {:?}", operator),
+                            message: format!("Invalid binary operator '{}'", operator.kind),
                             span: operator.span,
                         });
                     }
@@ -353,6 +353,22 @@ impl<'a, W: Write> Compiler<'a, W> {
                 }
                 bin.push_opcode(OpCode::Pop, node_span);
                 self.current_frame_mut().end_scope(bin, block.span);
+            }
+            AstNode::Or { left, right } => {
+                self.compile_node(bin, left)?;
+                let jump_index = bin.push_opcode(OpCode::JumpIfTrue(0), node_span);
+                bin.push_opcode(OpCode::Pop, node_span);
+                self.compile_node(bin, right)?;
+                bin[jump_index] = OpCode::JumpIfTrue(bin.len());
+                bin.push_opcode(OpCode::Bool, node_span);
+            }
+            AstNode::And { left, right } => {
+                self.compile_node(bin, left)?;
+                let jump_index = bin.push_opcode(OpCode::JumpIfFalse(0), node_span);
+                bin.push_opcode(OpCode::Pop, node_span);
+                self.compile_node(bin, right)?;
+                bin[jump_index] = OpCode::JumpIfFalse(bin.len());
+                bin.push_opcode(OpCode::Bool, node_span);
             }
         };
 

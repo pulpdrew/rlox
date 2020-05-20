@@ -50,6 +50,14 @@ pub enum AstNode {
         operator: Token,
         right: Box<SpannedAstNode>,
     },
+    Or {
+        left: Box<SpannedAstNode>,
+        right: Box<SpannedAstNode>,
+    },
+    And {
+        left: Box<SpannedAstNode>,
+        right: Box<SpannedAstNode>,
+    },
     Assignment {
         lvalue: Box<SpannedAstNode>,
         rvalue: Box<SpannedAstNode>,

@@ -118,7 +118,7 @@ impl Span {
     }
     /// Create and return a new span that minimally covers all of the spans in `spans`
     pub fn merge(spans: Vec<&Span>) -> Self {
-        let mut start = 0;
+        let mut start = usize::max_value();
         let mut end = 0;
         for span in spans {
             start = cmp::min(start, span.start);

@@ -333,6 +333,10 @@ impl VM {
                         });
                     }
                 }
+                OpCode::Bool => {
+                    let truthiness = self.pop()?.is_truthy();
+                    self.push(truthiness.into())
+                }
             }
             if cfg!(feature = "disassemble") {
                 self.print_stack(output_stream);

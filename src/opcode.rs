@@ -33,4 +33,5 @@ pub enum OpCode {
     SetField(usize),
     Method,
     Inherit,
+    Bool,
 }

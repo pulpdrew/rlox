@@ -146,6 +146,51 @@ true
 }
 
 #[test]
+fn logicals() {
+    let source = "
+        print true or false;
+        print false or true;
+        print false or false or false;
+        print false or true or false;
+
+        print true and false;
+        print true and true and true;
+        print true and true and false;
+
+        print false or true and false;
+
+        var x = 0;
+        print false and (x = 1);
+        print x;
+        print false or (x = 1);
+        print x;
+    "
+    .trim()
+    .to_string();
+
+    let expected_stderr = "".trim();
+    let expected_stdout = "
+true
+true
+false
+true
+false
+true
+false
+false
+false
+0
+true
+1
+    "
+    .trim();
+
+    let (stdout, stderr) = common::run(source);
+    assert_eq!(expected_stderr, stderr.contents.trim());
+    assert_eq!(expected_stdout, stdout.contents.trim());
+}
+
+#[test]
 fn arithmetic() {
     let source = "
         print 2 * (1 + -4 / 2);
