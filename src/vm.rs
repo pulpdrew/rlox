@@ -248,13 +248,13 @@ impl VM {
                             .fields
                             .borrow_mut()
                             .insert(field_name.clone(), rvalue.clone());
-                        self.push(rvalue);
                     } else {
                         return Err(RuntimeError {
                             message: format!("{:?} is not an instance", target_value),
                             span: closure.function.bin.spans[self.ip - 1],
                         });
                     }
+                    self.push(rvalue);
                 }
                 OpCode::SetUpvalue(index) => closure
                     .upvalues
