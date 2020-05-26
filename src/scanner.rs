@@ -1,243 +1,256 @@
 use crate::token::Kind;
 use crate::token::{Span, Token};
-use std::collections::VecDeque;
+use std::str::Chars;
 
 /// A Scanner is an iterator over source code that returns
 /// the `Token`s in the source code, in order.
 #[derive(Debug)]
-pub struct Scanner {
-    characters: VecDeque<char>,
-    line: usize,
-    index: usize,
+pub struct Scanner<'a> {
+    /// An iterator over the underlying source code
+    characters: Chars<'a>,
+
+    /// The source string that that makes up the `Token` currently being built
+    current: String,
+
+    /// The index in the underlying source string at which the current token begins
+    current_start_index: usize,
+
+    /// The length of the underlying source string
+    source_len: usize,
 }
 
-impl Iterator for Scanner {
+impl Iterator for Scanner<'_> {
     type Item = Token;
 
-    /// Return the next `Token` in the source code
-    fn next(&mut self) -> Option<Self::Item> {
+    /// Return the next `Token` in the source.
+    /// If there is no next token, return Token::Eof
+    fn next(&mut self) -> Option<Token> {
+        if self.peek(0) == None {
+            return Some(self.make_token(Kind::Eof));
+        }
+
         self.consume_whitespace();
+        if let Some(ch) = self.advance() {
+            Some(match ch {
+                '{' => self.make_token(Kind::LeftBrace),
+                '}' => self.make_token(Kind::RightBrace),
+                '(' => self.make_token(Kind::LeftParen),
+                ')' => self.make_token(Kind::RightParen),
+                ',' => self.make_token(Kind::Comma),
+                '.' => self.make_token(Kind::Dot),
+                '-' => self.make_token(Kind::Minus),
+                '+' => self.make_token(Kind::Plus),
+                '/' => self.make_token(Kind::Slash),
+                '*' => self.make_token(Kind::Star),
+                ';' => self.make_token(Kind::Semicolon),
 
-        Some(match self.peek(0) {
-            Some(ch) => match ch {
-                '{' => self.make_token(Kind::LeftBrace, 1),
-                '}' => self.make_token(Kind::RightBrace, 1),
-                '(' => self.make_token(Kind::LeftParen, 1),
-                ')' => self.make_token(Kind::RightParen, 1),
-                ',' => self.make_token(Kind::Comma, 1),
-                '.' => self.make_token(Kind::Dot, 1),
-                '-' => self.make_token(Kind::Minus, 1),
-                '+' => self.make_token(Kind::Plus, 1),
-                '/' => self.make_token(Kind::Slash, 1),
-                '*' => self.make_token(Kind::Star, 1),
-                ';' => self.make_token(Kind::Semicolon, 1),
-
-                '!' if self.peek(1) == Some(&'=') => self.make_token(Kind::BangEqual, 2),
-                '!' => self.make_token(Kind::Bang, 1),
-                '=' if self.peek(1) == Some(&'=') => self.make_token(Kind::EqualEqual, 2),
-                '=' => self.make_token(Kind::Equal, 1),
-                '>' if self.peek(1) == Some(&'=') => self.make_token(Kind::GreaterEqual, 2),
-                '>' => self.make_token(Kind::Greater, 1),
-                '<' if self.peek(1) == Some(&'=') => self.make_token(Kind::LessEqual, 2),
-                '<' => self.make_token(Kind::Less, 1),
+                '!' if self.peek(0) == Some('=') => {
+                    self.advance();
+                    self.make_token(Kind::BangEqual)
+                }
+                '!' => self.make_token(Kind::Bang),
+                '=' if self.peek(0) == Some('=') => {
+                    self.advance();
+                    self.make_token(Kind::EqualEqual)
+                }
+                '=' => self.make_token(Kind::Equal),
+                '>' if self.peek(0) == Some('=') => {
+                    self.advance();
+                    self.make_token(Kind::GreaterEqual)
+                }
+                '>' => self.make_token(Kind::Greater),
+                '<' if self.peek(0) == Some('=') => {
+                    self.advance();
+                    self.make_token(Kind::LessEqual)
+                }
+                '<' => self.make_token(Kind::Less),
 
                 'a'..='z' | 'A'..='Z' | '_' => self.identifier_literal(),
                 '0'..='9' => self.number_literal(),
                 '"' => self.string_literal(),
 
-                _ => self.make_error_token(1, "unrecognized character".to_string()),
-            },
-            None => self.make_token(Kind::Eof, 0),
-        })
+                _ => self.make_error_token("unrecognized character"),
+            })
+        } else {
+            Some(self.make_token(Kind::Eof))
+        }
     }
 }
 
-impl Scanner {
-    /// Create and return a new Scanner that operators on the given `source`
-    pub fn new(source: &str) -> Self {
+impl<'a> Scanner<'a> {
+    /// Create and return a new Scanner that reads tokens from the given `source`
+    pub fn new(source: &'a str) -> Self {
         Scanner {
-            characters: source.to_string().chars().collect(),
-            line: 1,
-            index: 0,
+            characters: source.chars(),
+            current: String::new(),
+            current_start_index: 0,
+            source_len: source.len(),
         }
     }
 
-    /// Consume and return the character from the front of `self.characters`.
+    /// Get the length of the underlying source string
+    pub fn source_len(&self) -> usize {
+        self.source_len
+    }
+
+    /// Consume a single `char` from `self.characters` and append it to `self.current`
     fn advance(&mut self) -> Option<char> {
-        self.index += 1;
-        self.characters.pop_front()
+        self.characters.next().map(|ch| {
+            self.current.push(ch);
+            ch
+        })
     }
 
     /// Peek at the character `count` characters from the beginning of `self.characters`.
-    fn peek(&self, count: usize) -> Option<&char> {
-        self.characters.get(count)
+    fn peek(&self, count: usize) -> Option<char> {
+        self.characters.as_str().chars().nth(count)
     }
 
     /// Consumes an identifier or keyword and makes a Token.
     fn identifier_literal(&mut self) -> Token {
-        let mut length = 1;
-        while is_digit(self.peek(length)) || is_alpha_or_under(self.peek(length)) {
-            length += 1
+        while is_digit(self.peek(0)) || is_alpha_or_under(self.peek(0)) {
+            self.advance();
         }
 
-        match self
-            .peek(0)
-            .expect("Expected a character at the beginning of an identifier")
-        {
-            'a' if length == 3 && self.starts_with("and") => self.make_token(Kind::And, 3),
-            'c' if length == 5 && self.starts_with("class") => self.make_token(Kind::Class, 5),
-            'e' if length == 4 && self.starts_with("else") => self.make_token(Kind::Else, 4),
+        match self.current.as_str() {
+            "and" => self.make_token(Kind::And),
+            "class" => self.make_token(Kind::Class),
+            "else" => self.make_token(Kind::Else),
 
-            'f' if length == 5 && self.starts_with("false") => self.make_token(Kind::False, 5),
-            'f' if length == 3 && self.starts_with("for") => self.make_token(Kind::For, 3),
-            'f' if length == 3 && self.starts_with("fun") => self.make_token(Kind::Fun, 3),
+            "false" => self.make_token(Kind::False),
+            "for" => self.make_token(Kind::For),
+            "fun" => self.make_token(Kind::Fun),
 
-            'i' if length == 2 && self.starts_with("if") => self.make_token(Kind::If, 2),
-            'n' if length == 3 && self.starts_with("nil") => self.make_token(Kind::Nil, 3),
-            'o' if length == 2 && self.starts_with("or") => self.make_token(Kind::Or, 2),
-            'p' if length == 5 && self.starts_with("print") => self.make_token(Kind::Print, 5),
-            'r' if length == 6 && self.starts_with("return") => self.make_token(Kind::Return, 6),
-            's' if length == 5 && self.starts_with("super") => self.make_token(Kind::Super, 5),
+            "if" => self.make_token(Kind::If),
+            "nil" => self.make_token(Kind::Nil),
+            "or" => self.make_token(Kind::Or),
+            "print" => self.make_token(Kind::Print),
+            "return" => self.make_token(Kind::Return),
+            "super" => self.make_token(Kind::Super),
 
-            't' if length == 4 && self.starts_with("this") => self.make_token(Kind::This, 4),
-            't' if length == 4 && self.starts_with("true") => self.make_token(Kind::True, 4),
+            "this" => self.make_token(Kind::This),
+            "true" => self.make_token(Kind::True),
 
-            'v' if length == 3 && self.starts_with("var") => self.make_token(Kind::Var, 3),
-            'w' if length == 5 && self.starts_with("while") => self.make_token(Kind::While, 5),
+            "var" => self.make_token(Kind::Var),
+            "while" => self.make_token(Kind::While),
 
-            _ => Token {
-                span: self.make_span(length),
-                kind: Kind::IdentifierLiteral(self.read_front(length)),
-            },
+            _ => {
+                let (source, span) = self.take_current();
+                Token {
+                    span,
+                    kind: Kind::IdentifierLiteral(source),
+                }
+            }
         }
     }
 
     /// Consumes a number literal and makes a Token
     fn number_literal(&mut self) -> Token {
-        let mut length = 1;
-        while is_digit(self.peek(length)) {
-            length += 1
+        while is_digit(self.peek(0)) {
+            self.advance();
         }
 
-        if self.peek(length) == Some(&'.') && is_digit(self.peek(length + 1)) {
-            length += 2;
-            while is_digit(self.peek(length)) {
-                length += 1
+        if self.peek(0) == Some('.') && is_digit(self.peek(1)) {
+            self.advance();
+            self.advance();
+
+            while is_digit(self.peek(0)) {
+                self.advance();
             }
         }
 
+        let (source, span) = self.take_current();
         Token {
-            span: self.make_span(length),
-            kind: Kind::NumberLiteral(self.read_front(length).parse().unwrap()),
+            span,
+            kind: Kind::NumberLiteral(source.parse().unwrap()),
         }
     }
 
     /// Consumes a string literal and makes a Token
     fn string_literal(&mut self) -> Token {
-        let mut length = 1;
-        while self.peek(length) != Some(&'"') && length <= self.characters.len() {
-            length += 1
+        while let Some(ch) = self.advance() {
+            if ch == '"' {
+                break;
+            }
         }
 
-        if length >= self.characters.len() {
-            self.make_error_token(
-                self.characters.len() - 1,
-                "unclosed string literal".to_string(),
-            )
-        } else {
-            Token {
-                span: self.make_span(length + 1),
-                kind: Kind::StringLiteral(self.read_front(length + 1)[1..length].to_string()),
-            }
+        if !self.current.ends_with('"') {
+            return self.make_error_token("unclosed string literal");
+        }
+
+        let (source, span) = self.take_current();
+        Token {
+            span,
+            kind: Kind::StringLiteral(source[1..(source.len() - 1)].to_string()),
         }
     }
 
-    /// Makes a token of the given `kind` out of the first `count` characters in `self.characters`.
-    fn make_token(&mut self, kind: Kind, length: usize) -> Token {
-        let span = match kind {
-            Kind::Eof => self.make_span(1),
-            _ => self.make_span(length),
-        };
-        self.read_front(length);
+    /// Consume `self.current` to produce a `Token` with the given kind
+    fn make_token(&mut self, kind: Kind) -> Token {
+        let (_, mut span) = self.take_current();
+        if kind == Kind::Eof {
+            span = Span::new(span.start, span.start + 1)
+        }
         Token { kind, span }
     }
 
-    /// Makes an error token out the next `length` characters
-    fn make_error_token(&mut self, length: usize, message: String) -> Token {
+    /// Consume `self.current` to produce a `Token` with `Kind::Error` with the given `message`
+    fn make_error_token(&mut self, message: &str) -> Token {
+        let (source, span) = self.take_current();
         Token {
-            span: self.make_span(length),
+            span,
             kind: Kind::Error {
-                message,
-                source: self.read_front(length),
+                message: message.to_string(),
+                source,
             },
         }
     }
 
-    /// Makes a span beginning at the current location in source and continuing for `length` characters
-    fn make_span(&self, length: usize) -> Span {
-        Span::new(self.index, self.index + length)
-    }
+    /// Return the current String and its Span and prepare
+    /// `current_start_index` and `current` for the next `Token`
+    fn take_current(&mut self) -> (String, Span) {
+        let mut content = String::new();
+        std::mem::swap(&mut content, &mut self.current);
 
-    /// Indicates whether thte prefix of `self.characters` matches the given prefix.
-    fn starts_with(&self, prefix: &str) -> bool {
-        for (i, ch) in prefix.char_indices() {
-            if self.peek(i) != Some(&ch) {
-                return false;
-            }
-        }
-        true
-    }
+        let span = Span::new(
+            self.current_start_index,
+            self.current_start_index + content.len(),
+        );
+        self.current_start_index += content.len();
 
-    /// Advances `count` times, yielding a String from the consumed characters
-    fn read_front(&mut self, count: usize) -> String {
-        let mut front = String::new();
-
-        for _ in 0..count {
-            if let Some(ch) = self.advance() {
-                front.push(ch);
-            }
-        }
-
-        front
+        (content, span)
     }
 
     /// Advances past any whitespace or comments.
     fn consume_whitespace(&mut self) {
-        loop {
-            match self.peek(0) {
-                Some(c) => match c {
-                    ' ' | '\t' | '\r' => {
-                        self.advance();
-                        continue;
-                    }
-                    '\n' => {
-                        self.advance();
-                        self.line += 1;
-                        continue;
-                    }
-                    '/' if self.peek(1) == Some(&'/') => {
-                        while self.advance() != Some('\n') {}
-                        continue;
-                    }
-                    _ => return,
-                },
-                None => return,
-            };
+        while let Some(ch) = self.peek(0) {
+            match ch {
+                ' ' | '\t' | '\r' | '\n' => {
+                    self.advance();
+                    continue;
+                }
+                '/' if self.peek(1) == Some('/') => {
+                    while self.advance() != Some('\n') {}
+                    continue;
+                }
+                _ => break,
+            }
         }
+        self.take_current();
     }
 }
 
-fn is_digit(ch: Option<&char>) -> bool {
-    if let Some(c) = ch {
-        *c >= '0' && *c <= '9'
+fn is_digit(ch: Option<char>) -> bool {
+    if let Some(_c @ '0'..='9') = ch {
+        true
     } else {
         false
     }
 }
 
-fn is_alpha_or_under(ch: Option<&char>) -> bool {
+fn is_alpha_or_under(ch: Option<char>) -> bool {
     if let Some(c) = ch {
-        match *c {
+        match c {
             'a'..='z' | 'A'..='Z' | '_' => true,
             _ => false,
         }
@@ -368,6 +381,7 @@ long_id // This is a comment
         let mut scanner = scanner::Scanner::new(&source);
         assert_eq!(scanner.next().unwrap().span, Span::new(0, 7));
         assert_eq!(scanner.next().unwrap().span, Span::new(30, 38));
+        assert_eq!(scanner.next().unwrap().span, Span::new(38, 39));
         assert_eq!(scanner.next().unwrap().span, Span::new(38, 39));
     }
 

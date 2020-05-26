@@ -5,13 +5,13 @@ use crate::token::{Kind, Span, Token};
 use crate::value::Value;
 
 #[derive(Debug)]
-pub struct Parser {
-    scanner: Scanner,
+pub struct Parser<'a> {
+    scanner: Scanner<'a>,
     current: Token,
 }
 
-impl Parser {
-    pub fn new(source: &str) -> Self {
+impl<'a> Parser<'a> {
+    pub fn new(source: &'a str) -> Self {
         let mut scanner = Scanner::new(&source);
         let current = scanner.next().unwrap();
         Parser { scanner, current }
