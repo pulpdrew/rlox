@@ -3,18 +3,25 @@ use crate::error::ParsingError;
 use crate::scanner::Scanner;
 use crate::token::{Kind, Span, Token};
 use crate::value::Value;
+use std::iter::Peekable;
 
 #[derive(Debug)]
 pub struct Parser<'a> {
-    scanner: Scanner<'a>,
-    current: Token,
+    scanner: Peekable<Scanner<'a>>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(source: &'a str) -> Self {
-        let mut scanner = Scanner::new(&source);
-        let current = scanner.next().unwrap();
-        Parser { scanner, current }
+        let scanner = Scanner::new(&source).peekable();
+        Parser { scanner }
+    }
+
+    fn is_at_end(&mut self) -> bool {
+        self.scanner.peek().is_none()
+    }
+
+    fn current(&mut self) -> &Token {
+        self.scanner.peek().unwrap()
     }
 
     /// Parse the source into a program - a list of declaration `AstNode`s
@@ -22,7 +29,7 @@ impl<'a> Parser<'a> {
         let mut program = vec![];
         let mut errors = vec![];
 
-        while self.current.kind != Kind::Eof {
+        while !self.is_at_end() {
             match self.declaration() {
                 Ok(decl) => program.push(decl),
                 Err(err) => {
@@ -40,7 +47,7 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        match self.current.kind {
+        match self.current().kind {
             Kind::Var => self.var_declaration(),
             Kind::Class => self.class_declaration(),
             Kind::Fun => {
@@ -55,7 +62,7 @@ impl<'a> Parser<'a> {
         let keyword = self.advance();
         let (name, _) = self.id_token()?;
 
-        let initializer = if self.current.kind == Kind::Equal {
+        let initializer = if self.current().kind == Kind::Equal {
             self.advance();
             let initializer = self.expression()?;
             Some(Box::new(initializer))
@@ -75,7 +82,7 @@ impl<'a> Parser<'a> {
         let keyword = self.eat(Kind::Class)?;
         let (name, _) = self.id_token()?;
 
-        let superclass = if let Kind::Less = self.current.kind {
+        let superclass = if let Kind::Less = self.current().kind {
             self.advance();
             let (superclass_name, superclass_span) = self.id_token()?;
             if superclass_name == name {
@@ -91,7 +98,7 @@ impl<'a> Parser<'a> {
         // Parse the class body (methods)
         self.eat(Kind::LeftBrace)?;
         let mut methods = vec![];
-        while self.current.kind != Kind::RightBrace && self.current.kind != Kind::Eof {
+        while self.current().kind != Kind::RightBrace {
             methods.push(self.function_declaration()?);
         }
         let end_brace = self.eat(Kind::RightBrace)?;
@@ -111,7 +118,7 @@ impl<'a> Parser<'a> {
         let (name, name_span) = self.id_token()?;
         self.eat(Kind::LeftParen)?;
 
-        let parameters = match self.current.kind {
+        let parameters = match self.current().kind {
             Kind::RightParen => vec![],
             Kind::IdentifierLiteral(_) => self.parameter_list()?,
             _ => {
@@ -137,7 +144,7 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        match self.current.kind {
+        match self.current().kind {
             Kind::Print => self.print_statement(),
             Kind::LeftBrace => self.block_statement(),
             Kind::If => self.if_statement(),
@@ -163,7 +170,7 @@ impl<'a> Parser<'a> {
     fn return_statement(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let keyword = self.advance();
 
-        let (value, span) = match self.current.kind {
+        let (value, span) = match self.current().kind {
             Kind::Semicolon => (None, keyword.span),
             _ => {
                 let expr = self.expression()?;
@@ -180,7 +187,7 @@ impl<'a> Parser<'a> {
         let keyword = self.advance();
         self.eat(Kind::LeftParen)?;
 
-        let initializer = match self.current.kind {
+        let initializer = match self.current().kind {
             Kind::Var => Some(Box::new(self.var_declaration()?)),
             Kind::Semicolon => {
                 self.advance();
@@ -189,14 +196,14 @@ impl<'a> Parser<'a> {
             _ => Some(Box::new(self.expression_statement()?)),
         };
 
-        let condition = match self.current.kind {
+        let condition = match self.current().kind {
             Kind::Semicolon => None,
             _ => Some(Box::new(self.expression()?)),
         };
 
         self.eat(Kind::Semicolon)?;
 
-        let update = match self.current.kind {
+        let update = match self.current().kind {
             Kind::RightParen => None,
             _ => Some(Box::new(self.expression()?)),
         };
@@ -246,7 +253,7 @@ impl<'a> Parser<'a> {
         let if_block = self.statement()?;
         let mut span = Span::merge(vec![&keyword.span, &if_block.span]);
 
-        let else_block = if let Kind::Else = self.current.kind {
+        let else_block = if let Kind::Else = self.current().kind {
             self.advance();
             let stmt = self.statement()?;
             span = Span::merge(vec![&span, &stmt.span]);
@@ -270,8 +277,8 @@ impl<'a> Parser<'a> {
 
         let mut declarations = vec![];
         loop {
-            match self.current.kind {
-                Kind::RightBrace | Kind::Eof => break,
+            match self.current().kind {
+                Kind::RightBrace => break,
                 _ => declarations.push(self.declaration()?),
             }
         }
@@ -304,7 +311,7 @@ impl<'a> Parser<'a> {
     fn assignment(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let node = self.or()?;
 
-        if self.current.kind == Kind::Equal {
+        if self.current().kind == Kind::Equal {
             self.advance();
             let rvalue = self.assignment()?;
             let new_span = Span::merge(vec![&node.span, &rvalue.span]);
@@ -323,7 +330,7 @@ impl<'a> Parser<'a> {
 
     fn or(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let mut node = self.and()?;
-        while self.current.kind == Kind::Or {
+        while self.current().kind == Kind::Or {
             self.advance();
             let right = self.and()?;
             let new_span = Span::merge(vec![&node.span, &right.span]);
@@ -342,7 +349,7 @@ impl<'a> Parser<'a> {
 
     fn and(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let mut node = self.equality()?;
-        while self.current.kind == Kind::And {
+        while self.current().kind == Kind::And {
             self.advance();
             let right = self.equality()?;
             let new_span = Span::merge(vec![&node.span, &right.span]);
@@ -361,7 +368,7 @@ impl<'a> Parser<'a> {
 
     fn equality(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let mut node = self.comparison()?;
-        while let Kind::EqualEqual | Kind::BangEqual = self.current.kind {
+        while let Kind::EqualEqual | Kind::BangEqual = self.current().kind {
             let operator = self.advance();
             let right = self.comparison()?;
             let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
@@ -381,7 +388,7 @@ impl<'a> Parser<'a> {
     fn comparison(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let mut node = self.addition()?;
         while let Kind::Less | Kind::LessEqual | Kind::Greater | Kind::GreaterEqual =
-            self.current.kind
+            self.current().kind
         {
             let operator = self.advance();
             let right = self.addition()?;
@@ -402,7 +409,7 @@ impl<'a> Parser<'a> {
     fn addition(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let mut node = self.multiplication()?;
 
-        while self.current.kind == Kind::Plus || self.current.kind == Kind::Minus {
+        while self.current().kind == Kind::Plus || self.current().kind == Kind::Minus {
             let operator = self.advance();
             let right = self.multiplication()?;
             let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
@@ -423,7 +430,7 @@ impl<'a> Parser<'a> {
     fn multiplication(&mut self) -> Result<SpannedAstNode, ParsingError> {
         let mut node = self.unary()?;
 
-        while self.current.kind == Kind::Star || self.current.kind == Kind::Slash {
+        while self.current().kind == Kind::Star || self.current().kind == Kind::Slash {
             let operator = self.advance();
             let right = self.unary()?;
             let new_span = Span::merge(vec![&node.span, &operator.span, &right.span]);
@@ -442,7 +449,7 @@ impl<'a> Parser<'a> {
     }
 
     fn unary(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        match self.current.kind {
+        match self.current().kind {
             Kind::Minus | Kind::Bang => {
                 let operator = self.advance();
                 let expression = self.unary()?;
@@ -463,7 +470,7 @@ impl<'a> Parser<'a> {
     fn argument_list(&mut self) -> Result<Vec<SpannedAstNode>, ParsingError> {
         let mut args = vec![];
         args.push(self.expression()?);
-        while self.current.kind == Kind::Comma {
+        while self.current().kind == Kind::Comma {
             self.advance();
             args.push(self.expression()?);
         }
@@ -475,11 +482,11 @@ impl<'a> Parser<'a> {
         let mut node = self.primary()?;
 
         loop {
-            match self.current.kind {
+            match self.current().kind {
                 Kind::LeftParen => {
                     self.advance();
 
-                    let arguments = match self.current.kind {
+                    let arguments = match self.current().kind {
                         Kind::RightParen => vec![],
                         _ => self.argument_list()?,
                     };
@@ -515,7 +522,7 @@ impl<'a> Parser<'a> {
     }
 
     fn primary(&mut self) -> Result<SpannedAstNode, ParsingError> {
-        match &self.current.kind {
+        match &self.current().kind {
             Kind::LeftParen => {
                 let lparen = self.advance();
                 let expression = self.expression()?;
@@ -612,7 +619,7 @@ impl<'a> Parser<'a> {
     fn parameter_list(&mut self) -> Result<Vec<Token>, ParsingError> {
         let mut parameters = vec![];
         parameters.push(self.advance());
-        while self.current.kind == Kind::Comma {
+        while self.current().kind == Kind::Comma {
             self.advance();
             let param_name = self.advance();
             if let Kind::IdentifierLiteral(_) = param_name.kind {
@@ -641,16 +648,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Return the current `Token` and set `self.current` the the next `Token`
+    /// Return the current `Token` and set `self.current()` the the next `Token`
     fn advance(&mut self) -> Token {
-        let mut temp = self.scanner.next().unwrap();
-        std::mem::swap(&mut temp, &mut self.current);
-        temp
+        self.scanner.next().unwrap()
     }
 
     /// Advance if the current `Token` matches `kind`. Otherwise, return an error
     fn eat(&mut self, kind: Kind) -> Result<Token, ParsingError> {
-        if self.current.kind == kind {
+        if self.current().kind == kind {
             Ok(self.advance())
         } else {
             Err(ParsingError::UnexpectedToken {
@@ -663,8 +668,8 @@ impl<'a> Parser<'a> {
     /// Consume tokens until current is '{', '}', or the token after a ';'
     fn synchronize(&mut self) {
         loop {
-            match self.current.kind {
-                Kind::Semicolon | Kind::Eof => {
+            match self.current().kind {
+                Kind::Semicolon => {
                     self.advance();
                     break;
                 }

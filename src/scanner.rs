@@ -14,9 +14,6 @@ pub struct Scanner<'a> {
 
     /// The index in the underlying source string at which the current token begins
     current_start_index: usize,
-
-    /// The length of the underlying source string
-    source_len: usize,
 }
 
 impl Iterator for Scanner<'_> {
@@ -26,53 +23,53 @@ impl Iterator for Scanner<'_> {
     /// If there is no next token, return Token::Eof
     fn next(&mut self) -> Option<Token> {
         if self.peek(0) == None {
-            return Some(self.make_token(Kind::Eof));
+            return None;
         }
 
         self.consume_whitespace();
         if let Some(ch) = self.advance() {
             Some(match ch {
-                '{' => self.make_token(Kind::LeftBrace),
-                '}' => self.make_token(Kind::RightBrace),
-                '(' => self.make_token(Kind::LeftParen),
-                ')' => self.make_token(Kind::RightParen),
-                ',' => self.make_token(Kind::Comma),
-                '.' => self.make_token(Kind::Dot),
-                '-' => self.make_token(Kind::Minus),
-                '+' => self.make_token(Kind::Plus),
-                '/' => self.make_token(Kind::Slash),
-                '*' => self.make_token(Kind::Star),
-                ';' => self.make_token(Kind::Semicolon),
+                '{' => self.take_token(Kind::LeftBrace),
+                '}' => self.take_token(Kind::RightBrace),
+                '(' => self.take_token(Kind::LeftParen),
+                ')' => self.take_token(Kind::RightParen),
+                ',' => self.take_token(Kind::Comma),
+                '.' => self.take_token(Kind::Dot),
+                '-' => self.take_token(Kind::Minus),
+                '+' => self.take_token(Kind::Plus),
+                '/' => self.take_token(Kind::Slash),
+                '*' => self.take_token(Kind::Star),
+                ';' => self.take_token(Kind::Semicolon),
 
                 '!' if self.peek(0) == Some('=') => {
                     self.advance();
-                    self.make_token(Kind::BangEqual)
+                    self.take_token(Kind::BangEqual)
                 }
-                '!' => self.make_token(Kind::Bang),
+                '!' => self.take_token(Kind::Bang),
                 '=' if self.peek(0) == Some('=') => {
                     self.advance();
-                    self.make_token(Kind::EqualEqual)
+                    self.take_token(Kind::EqualEqual)
                 }
-                '=' => self.make_token(Kind::Equal),
+                '=' => self.take_token(Kind::Equal),
                 '>' if self.peek(0) == Some('=') => {
                     self.advance();
-                    self.make_token(Kind::GreaterEqual)
+                    self.take_token(Kind::GreaterEqual)
                 }
-                '>' => self.make_token(Kind::Greater),
+                '>' => self.take_token(Kind::Greater),
                 '<' if self.peek(0) == Some('=') => {
                     self.advance();
-                    self.make_token(Kind::LessEqual)
+                    self.take_token(Kind::LessEqual)
                 }
-                '<' => self.make_token(Kind::Less),
+                '<' => self.take_token(Kind::Less),
 
                 'a'..='z' | 'A'..='Z' | '_' => self.identifier_literal(),
                 '0'..='9' => self.number_literal(),
                 '"' => self.string_literal(),
 
-                _ => self.make_error_token("unrecognized character"),
+                _ => self.take_error_token("unrecognized character"),
             })
         } else {
-            Some(self.make_token(Kind::Eof))
+            None
         }
     }
 }
@@ -84,13 +81,7 @@ impl<'a> Scanner<'a> {
             characters: source.chars(),
             current: String::new(),
             current_start_index: 0,
-            source_len: source.len(),
         }
-    }
-
-    /// Get the length of the underlying source string
-    pub fn source_len(&self) -> usize {
-        self.source_len
     }
 
     /// Consume a single `char` from `self.characters` and append it to `self.current`
@@ -113,26 +104,26 @@ impl<'a> Scanner<'a> {
         }
 
         match self.current.as_str() {
-            "and" => self.make_token(Kind::And),
-            "class" => self.make_token(Kind::Class),
-            "else" => self.make_token(Kind::Else),
+            "and" => self.take_token(Kind::And),
+            "class" => self.take_token(Kind::Class),
+            "else" => self.take_token(Kind::Else),
 
-            "false" => self.make_token(Kind::False),
-            "for" => self.make_token(Kind::For),
-            "fun" => self.make_token(Kind::Fun),
+            "false" => self.take_token(Kind::False),
+            "for" => self.take_token(Kind::For),
+            "fun" => self.take_token(Kind::Fun),
 
-            "if" => self.make_token(Kind::If),
-            "nil" => self.make_token(Kind::Nil),
-            "or" => self.make_token(Kind::Or),
-            "print" => self.make_token(Kind::Print),
-            "return" => self.make_token(Kind::Return),
-            "super" => self.make_token(Kind::Super),
+            "if" => self.take_token(Kind::If),
+            "nil" => self.take_token(Kind::Nil),
+            "or" => self.take_token(Kind::Or),
+            "print" => self.take_token(Kind::Print),
+            "return" => self.take_token(Kind::Return),
+            "super" => self.take_token(Kind::Super),
 
-            "this" => self.make_token(Kind::This),
-            "true" => self.make_token(Kind::True),
+            "this" => self.take_token(Kind::This),
+            "true" => self.take_token(Kind::True),
 
-            "var" => self.make_token(Kind::Var),
-            "while" => self.make_token(Kind::While),
+            "var" => self.take_token(Kind::Var),
+            "while" => self.take_token(Kind::While),
 
             _ => {
                 let (source, span) = self.take_current();
@@ -175,7 +166,7 @@ impl<'a> Scanner<'a> {
         }
 
         if !self.current.ends_with('"') {
-            return self.make_error_token("unclosed string literal");
+            return self.take_error_token("unclosed string literal");
         }
 
         let (source, span) = self.take_current();
@@ -186,16 +177,13 @@ impl<'a> Scanner<'a> {
     }
 
     /// Consume `self.current` to produce a `Token` with the given kind
-    fn make_token(&mut self, kind: Kind) -> Token {
-        let (_, mut span) = self.take_current();
-        if kind == Kind::Eof {
-            span = Span::new(span.start, span.start + 1)
-        }
+    fn take_token(&mut self, kind: Kind) -> Token {
+        let (_, span) = self.take_current();
         Token { kind, span }
     }
 
     /// Consume `self.current` to produce a `Token` with `Kind::Error` with the given `message`
-    fn make_error_token(&mut self, message: &str) -> Token {
+    fn take_error_token(&mut self, message: &str) -> Token {
         let (source, span) = self.take_current();
         Token {
             span,
@@ -366,7 +354,7 @@ mod tests {
     #[test]
     fn empty_file() {
         let mut scanner = scanner::Scanner::new("");
-        assert_eq!(scanner.next().unwrap().kind, Kind::Eof);
+        assert_eq!(scanner.next(), None);
     }
 
     #[test]
@@ -381,8 +369,7 @@ long_id // This is a comment
         let mut scanner = scanner::Scanner::new(&source);
         assert_eq!(scanner.next().unwrap().span, Span::new(0, 7));
         assert_eq!(scanner.next().unwrap().span, Span::new(30, 38));
-        assert_eq!(scanner.next().unwrap().span, Span::new(38, 39));
-        assert_eq!(scanner.next().unwrap().span, Span::new(38, 39));
+        assert_eq!(scanner.next(), None);
     }
 
     fn single_token_test(source: String, expected_kind: Kind) {
@@ -390,6 +377,6 @@ long_id // This is a comment
         let token = scanner.next();
 
         assert_eq!(token.as_ref().unwrap().kind, expected_kind);
-        assert_eq!(scanner.next().unwrap().kind, Kind::Eof, "Expected Eof.");
+        assert_eq!(scanner.next(), None, "Expected Eof.");
     }
 }

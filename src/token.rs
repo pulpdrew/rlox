@@ -2,7 +2,7 @@ use std::cmp;
 use std::fmt;
 
 /// An indivisible bit of source code tagged with a `Kind` and a `Span`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub kind: Kind,
     pub span: Span,
@@ -53,7 +53,6 @@ pub enum Kind {
     Super,
     This,
 
-    Eof,
     Error { message: String, source: String },
 }
 
@@ -98,7 +97,6 @@ impl fmt::Display for Kind {
             Kind::Return => write!(f, "return"),
             Kind::Super => write!(f, "super"),
             Kind::This => write!(f, "this"),
-            Kind::Eof => write!(f, "end of file"),
             Kind::Error { message, .. } => write!(f, "{}", message),
         }
     }
