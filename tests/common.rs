@@ -47,7 +47,7 @@ pub fn run(source: String) -> (Output, Output) {
     };
 
     // Compile
-    let script = match compiler::compile(ast, &mut stdout) {
+    let script = match compiler::compile(ast) {
         Ok(bin) => bin,
         Err(e) => {
             reporter.report(&e);

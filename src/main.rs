@@ -23,7 +23,7 @@ fn run(source: String, vm: &mut VM) {
     };
 
     // Compile
-    let script = match compiler::compile(ast, &mut std::io::stdout()) {
+    let script = match compiler::compile(ast) {
         Ok(bin) => bin,
         Err(e) => {
             reporter.report(&e);

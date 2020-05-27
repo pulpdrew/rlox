@@ -8,19 +8,15 @@ use crate::value::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::io::Write;
 use std::rc::Rc;
 
 /// The state of a compiler
 #[derive(Debug)]
-pub struct Compiler<'a, W: Write> {
+pub struct Compiler {
     /// The call frames (containing variables) that are expected
     /// to be on the stack when the code currently being compiled
     /// is executed.
     frames: VecDeque<Frame>,
-
-    /// The Write stream that compilation output is written to
-    output_stream: &'a mut W,
 }
 
 /// Compile the given AST root nodes into an executable
@@ -31,12 +27,8 @@ pub struct Compiler<'a, W: Write> {
 /// # Arguments
 ///
 /// * `program` - the declaration nodes that make up the program to be compiled
-/// * `output_stream` - the Write stream that any compilation output should be written to
-pub fn compile<W: Write>(
-    program: Vec<SpannedAstNode>,
-    output_stream: &mut W,
-) -> Result<ObjClosure, CompilerError> {
-    let mut compiler = Compiler::new(output_stream);
+pub fn compile(program: Vec<SpannedAstNode>) -> Result<ObjClosure, CompilerError> {
+    let mut compiler = Compiler::new();
     let mut bin = Executable::new(String::from("script"));
 
     for node in program {
@@ -54,15 +46,12 @@ pub fn compile<W: Write>(
     })
 }
 
-impl<'a, W: Write> Compiler<'a, W> {
+impl Compiler {
     /// A new compiler with only a global scope defined.
-    pub fn new(output_stream: &'a mut W) -> Self {
+    pub fn new() -> Self {
         let mut scopes = VecDeque::new();
         scopes.push_back(Frame::new(true, FunctionType::None));
-        Compiler {
-            frames: scopes,
-            output_stream,
-        }
+        Compiler { frames: scopes }
     }
 
     /// Compile a single AST node into the provided binary.
@@ -540,7 +529,7 @@ impl<'a, W: Write> Compiler<'a, W> {
 
             // Disassemble the function body if enabled
             if cfg!(feature = "disassemble") {
-                function_binary.dump(self.output_stream);
+                function_binary.dump(&mut std::io::stdout());
             }
 
             // End the scope and restore the outer function's frame
