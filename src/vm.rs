@@ -43,7 +43,7 @@ impl VM {
         self.stack = Vec::new();
     }
 
-    pub fn interpret<W: Write>(
+    pub fn execute<W: Write>(
         &mut self,
         closure: &ObjClosure,
         output_stream: &mut W,
@@ -366,7 +366,7 @@ impl VM {
         self.ip = 0;
 
         // Run the function
-        self.interpret(closure, output_stream)?;
+        self.execute(closure, output_stream)?;
 
         // Remove everything from the stack except the return value
         for _ in (self.base + 1)..self.stack.len() {

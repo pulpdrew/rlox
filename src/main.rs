@@ -37,7 +37,7 @@ fn run(source: String, vm: &mut VM) {
 
     // Execute
     vm.reset();
-    match vm.interpret(&script, &mut std::io::stdout()) {
+    match vm.execute(&script, &mut std::io::stdout()) {
         Ok(_) => {}
         Err(e) => {
             reporter.report(&e);

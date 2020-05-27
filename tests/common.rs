@@ -56,7 +56,7 @@ pub fn run(source: String) -> (Output, Output) {
     };
 
     // Execute
-    match vm.interpret(&script, &mut stdout) {
+    match vm.execute(&script, &mut stdout) {
         Ok(_) => {}
         Err(e) => {
             reporter.report(&e);
